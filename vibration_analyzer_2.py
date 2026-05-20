@@ -224,6 +224,7 @@ class VibrationApp:
 
         self._build_ui()
         self._poll_queue()
+        self.root.after(200, self._auto_detect_time_range)
 
     # ─────────────── UI 框架 ─────────────────────────────
 
@@ -255,15 +256,15 @@ class VibrationApp:
         g.pack(fill=tk.X, **pad)
         for lbl, attr, val in [
             ("開始日期:","var_start_date","2026/04/16"),
-            ("開始時間:","var_start_time","00:00:00"),
+            ("開始時間:","var_start_time","00:00:00.0"),
             ("結束日期:","var_end_date",  "2026/04/23"),
-            ("結束時間:","var_end_time",  "23:59:59"),
+            ("結束時間:","var_end_time",  "23:59:59.9"),
         ]:
             row = ttk.Frame(g); row.pack(fill=tk.X, pady=1)
             ttk.Label(row, text=lbl, width=9).pack(side=tk.LEFT)
             var = tk.StringVar(value=val); setattr(self, attr, var)
-            ttk.Entry(row, textvariable=var, width=14).pack(side=tk.RIGHT)
-        ttk.Label(g, text="格式  YYYY/MM/DD  HH:MM:SS",
+            ttk.Entry(row, textvariable=var, width=16).pack(side=tk.RIGHT)
+        ttk.Label(g, text="格式  YYYY/MM/DD  HH:MM:SS.f",
                   font=("",7), foreground="gray").pack(anchor=tk.W)
 
         # 頻率範圍
@@ -290,7 +291,7 @@ class VibrationApp:
         # 分析間距
         g = ttk.LabelFrame(parent, text="分析間距", padding=5)
         g.pack(fill=tk.X, **pad)
-        self.var_interval = tk.StringVar(value="1 秒")
+        self.var_interval = tk.StringVar(value="原始 (0.1s)")
         cols_f = ttk.Frame(g); cols_f.pack(fill=tk.X)
         for lbl, _, _ in INTERVAL_OPTIONS:
             ttk.Radiobutton(cols_f, text=lbl, variable=self.var_interval,
@@ -682,18 +683,54 @@ class VibrationApp:
         d = filedialog.askdirectory(initialdir=self.var_dir.get())
         if d:
             self.var_dir.set(d)
+            self._auto_detect_time_range()
+
+    def _auto_detect_time_range(self):
+        """掃描 .rnd 檔，自動偵測量測起迄時間並填入側邊欄。"""
+        root_dir = self.var_dir.get().strip()
+        if not os.path.isdir(root_dir):
+            return
+        rnd_files = self._find_rnd_files(root_dir)
+        if not rnd_files:
+            return
+        # 取第一個與最後一個檔案，分別讀頭尾以取得時間範圍
+        t_min, t_max = None, None
+        for f in [rnd_files[0], rnd_files[-1]]:
+            try:
+                df = pd.read_csv(f, skiprows=1, na_values=["--","UN","OL",""],
+                                 dtype=str, usecols=["Start Time"], low_memory=False)
+                df.columns = [c.strip() for c in df.columns]
+                ts = pd.to_datetime(df["Start Time"].str.strip(),
+                                    format="%Y/%m/%d %H:%M:%S.%f", errors="coerce")
+                ts = ts.dropna()
+                if len(ts) == 0:
+                    continue
+                fmin, fmax = ts.min(), ts.max()
+                t_min = fmin if t_min is None else min(t_min, fmin)
+                t_max = fmax if t_max is None else max(t_max, fmax)
+            except Exception:
+                continue
+        if t_min is not None and t_max is not None:
+            self.var_start_date.set(t_min.strftime("%Y/%m/%d"))
+            self.var_start_time.set(t_min.strftime("%H:%M:%S.%f")[:-5])
+            self.var_end_date.set(t_max.strftime("%Y/%m/%d"))
+            self.var_end_time.set(t_max.strftime("%H:%M:%S.%f")[:-5])
 
     def _parse_params(self) -> dict:
         root_dir = self.var_dir.get().strip()
         if not os.path.isdir(root_dir):
             raise ValueError(f"目錄不存在:\n{root_dir}")
+        def _parse_dt(date_str, time_str):
+            s = f"{date_str.strip()} {time_str.strip()}"
+            for fmt in ("%Y/%m/%d %H:%M:%S.%f", "%Y/%m/%d %H:%M:%S"):
+                try:
+                    return datetime.datetime.strptime(s, fmt)
+                except ValueError:
+                    continue
+            raise ValueError(f"無法解析: {s}")
         try:
-            start_dt = datetime.datetime.strptime(
-                f"{self.var_start_date.get().strip()} {self.var_start_time.get().strip()}",
-                "%Y/%m/%d %H:%M:%S")
-            end_dt = datetime.datetime.strptime(
-                f"{self.var_end_date.get().strip()} {self.var_end_time.get().strip()}",
-                "%Y/%m/%d %H:%M:%S")
+            start_dt = _parse_dt(self.var_start_date.get(), self.var_start_time.get())
+            end_dt   = _parse_dt(self.var_end_date.get(),   self.var_end_time.get())
         except ValueError as e:
             raise ValueError(f"日期/時間格式錯誤:\n{e}")
         if start_dt >= end_dt:
@@ -780,9 +817,10 @@ class VibrationApp:
             if not all_dfs:
                 self._post("error", "指定時間範圍內無資料"); return
 
-            self._post("status", "合併排序...")
+            self._post("status", "合併排序去重...")
             df = pd.concat(all_dfs, ignore_index=True)
             df.sort_values("Start Time", inplace=True)
+            df.drop_duplicates(subset=["Start Time"], keep="first", inplace=True)
             df.reset_index(drop=True, inplace=True)
             del all_dfs
             n_rows = len(df)
@@ -997,7 +1035,14 @@ class VibrationApp:
         for i, (_, row) in enumerate(chunk.iterrows()):
             ts = row.get("Start Time")
             global_no = start + i + 1
-            vals = [str(global_no), ts.strftime("%Y/%m/%d %H:%M:%S") if pd.notna(ts) else ""]
+            if pd.notna(ts):
+                if self._params and self._params["interval_sec"] < 1:
+                    ts_str = ts.strftime("%Y/%m/%d %H:%M:%S.") + f"{ts.microsecond // 100000}"
+                else:
+                    ts_str = ts.strftime("%Y/%m/%d %H:%M:%S")
+            else:
+                ts_str = ""
+            vals = [str(global_no), ts_str]
             if self._raw_show_bb:
                 for ax in self._raw_show_axes:
                     vals.append(self._fmt_d(row.get(f"_BB_{ax}", np.nan)))
@@ -1132,8 +1177,8 @@ class VibrationApp:
         p     = self._params
         unit  = self._unit_label()
         bands = p["sel_bands"]
-        start_str = p["start_dt"].strftime("%Y/%m/%d %H:%M:%S")
-        end_str   = p["end_dt"].strftime("%Y/%m/%d %H:%M:%S")
+        start_str = p["start_dt"].strftime("%Y/%m/%d %H:%M:%S.%f")[:-5]
+        end_str   = p["end_dt"].strftime("%Y/%m/%d %H:%M:%S.%f")[:-5]
         period_str = f"{start_str} ～ {end_str}"
 
         self.lbl_stats_period.config(
@@ -1402,8 +1447,8 @@ class VibrationApp:
         to_dsp = self._to_display
         fmt = self._fmt_d
 
-        start_str = p["start_dt"].strftime("%Y/%m/%d %H:%M")
-        end_str = p["end_dt"].strftime("%Y/%m/%d %H:%M")
+        start_str = p["start_dt"].strftime("%Y/%m/%d %H:%M:%S.%f")[:-5]
+        end_str = p["end_dt"].strftime("%Y/%m/%d %H:%M:%S.%f")[:-5]
         self.lbl_env_period.config(
             text=f"分析期間：{start_str} ～ {end_str}　／　"
                  f"間距：{p['interval_label']}　／　"
@@ -1501,8 +1546,8 @@ class VibrationApp:
         if not path: return
         p = self._params
         unit = self._unit_label()
-        period = (f"{p['start_dt'].strftime('%Y/%m/%d %H:%M:%S')}"
-                  f" ~ {p['end_dt'].strftime('%Y/%m/%d %H:%M:%S')}")
+        period = (f"{p['start_dt'].strftime('%Y/%m/%d %H:%M:%S.%f')[:-5]}"
+                  f" ~ {p['end_dt'].strftime('%Y/%m/%d %H:%M:%S.%f')[:-5]}")
         rows = []
         for axis in AXES + ["XYZ"]:
             data = self._results.get(axis,{})

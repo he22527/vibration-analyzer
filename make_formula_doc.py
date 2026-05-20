@@ -712,6 +712,372 @@ ws4.column_dimensions["C"].width = 56
 for c in range(4, 22):
     ws4.column_dimensions[get_column_letter(c)].width = 14
 
+# ═══════════════════════════════════════
+# Sheet 5: 原始數據說明
+# ═══════════════════════════════════════
+with open(r"C:\Users\AC717\背景振動量測數據\raw_xyz_samples.json", "r", encoding="utf-8") as _f:
+    RAW = json.load(_f)
+
+ws5 = wb.create_sheet("原始數據說明")
+r5 = 1
+
+r5 = title_cell(ws5, r5, "原始數據說明 — .RND 檔案結構與 XYZ 合成過程", 10)
+r5 += 1
+
+# ── 一、RND 檔案格式說明 ──
+r5 = subtitle_cell(ws5, r5, "一、.RND 檔案格式說明", 10)
+fmt_rows = [
+    ("檔案格式", "CSV（逗號分隔），第 1 列為 \"CSV\" 標記，第 2 列為欄位標頭"),
+    ("量測儀器", "加速規（三軸），輸出 1/3 八度音帶頻譜"),
+    ("取樣間距", "0.1 秒 / 筆（每秒 10 筆）"),
+    ("量測單位", "m/s²（加速度）"),
+    ("頻段範圍", "1 Hz ~ 315 Hz（共 26 個 1/3 八度音帶）+ AP(全頻) + APW(加權)"),
+    ("軸向", "X、Y、Z 三軸分別記錄，每軸各有完整頻段欄位"),
+    ("欄位命名", "X_10 Hz、Y_10 Hz、Z_10 Hz … 依此類推"),
+    ("特殊值", "-- = 超出範圍、UN = Under（低於下限）、OL = Over（超出上限）"),
+]
+for label, val in fmt_rows:
+    ws5.cell(row=r5, column=1, value=label).font = cat_font
+    ws5.cell(row=r5, column=1).border = border
+    ws5.cell(row=r5, column=2, value=val).font = body_font
+    ws5.cell(row=r5, column=2).border = border
+    ws5.merge_cells(start_row=r5, start_column=2, end_row=r5, end_column=8)
+    r5 += 1
+r5 += 1
+
+# ── 二、欄位結構示意 ──
+r5 = subtitle_cell(ws5, r5, "二、欄位結構示意（每列 = 0.1 秒一筆資料）", 10)
+col_demo = ["Address", "Start Time",
+            "X_AP", "X_1 Hz", "X_10 Hz", "… X_315 Hz",
+            "Y_AP", "Y_1 Hz", "Y_10 Hz", "… Y_315 Hz",
+            "Z_AP", "Z_1 Hz", "Z_10 Hz", "… Z_315 Hz"]
+for c, h in enumerate(col_demo, 1):
+    cell = ws5.cell(row=r5, column=c, value=h)
+    cell.font = hdr_font
+    cell.fill = hdr_fill
+    cell.alignment = cwrap
+    cell.border = border
+r5 += 1
+demo_vals = ["1", "2026/04/16 10:00:00.0",
+             "0.00011", "0.00001", "0.00005", "…",
+             "0.00011", "0.00001", "0.00004", "…",
+             "0.00021", "0.00000", "0.00008", "…"]
+for c, v in enumerate(demo_vals, 1):
+    cell = ws5.cell(row=r5, column=c, value=v)
+    cell.font = val_font
+    cell.alignment = center
+    cell.border = border
+r5 += 2
+
+# ── 三、XYZ 合成計算（10 Hz 頻段） ──
+for band_name in ["10 Hz", "31.5 Hz"]:
+    raw_rows = RAW[band_name]
+    r5 = subtitle_cell(ws5, r5,
+        f"三、原始 X / Y / Z 數據與 XYZ 合成 — {band_name} 頻段（前 20 筆）" if band_name == "10 Hz"
+        else f"四、原始 X / Y / Z 數據與 XYZ 合成 — {band_name} 頻段（前 20 筆）", 10)
+
+    raw_hdr = ["筆數", "時間", f"X_{band_name}\n(m/s²)", f"Y_{band_name}\n(m/s²)",
+               f"Z_{band_name}\n(m/s²)", "X²", "Y²", "Z²", "X²+Y²+Z²",
+               f"XYZ = √(X²+Y²+Z²)\n(m/s²)"]
+    for c, h in enumerate(raw_hdr, 1):
+        ws5.cell(row=r5, column=c, value=h)
+    style_hdr(ws5, r5, len(raw_hdr))
+    r5 += 1
+
+    data_start_row = r5  # remember for Leq formula later
+    for i, row in enumerate(raw_rows):
+        x, y, z = row["X"], row["Y"], row["Z"]
+        t_short = row["time"].replace("2026-04-16 ", "")
+        rr = r5  # current Excel row
+        # Col A: 筆數
+        cell = ws5.cell(row=rr, column=1, value=i+1)
+        cell.font = cat_font; cell.border = border; cell.alignment = center
+        # Col B: 時間
+        cell = ws5.cell(row=rr, column=2, value=t_short)
+        cell.font = val_font; cell.border = border; cell.alignment = center
+        # Col C/D/E: X, Y, Z 原始數值
+        for ci, v in [(3, x), (4, y), (5, z)]:
+            cell = ws5.cell(row=rr, column=ci, value=v)
+            cell.font = val_font; cell.border = border; cell.alignment = center
+            cell.number_format = "0.00000"
+        # Col F: X² = C^2
+        cl = get_column_letter
+        cell = ws5.cell(row=rr, column=6, value=f"={cl(3)}{rr}^2")
+        cell.font = val_font; cell.border = border; cell.alignment = center
+        cell.number_format = "0.00E+00"
+        # Col G: Y² = D^2
+        cell = ws5.cell(row=rr, column=7, value=f"={cl(4)}{rr}^2")
+        cell.font = val_font; cell.border = border; cell.alignment = center
+        cell.number_format = "0.00E+00"
+        # Col H: Z² = E^2
+        cell = ws5.cell(row=rr, column=8, value=f"={cl(5)}{rr}^2")
+        cell.font = val_font; cell.border = border; cell.alignment = center
+        cell.number_format = "0.00E+00"
+        # Col I: X²+Y²+Z² = F+G+H
+        cell = ws5.cell(row=rr, column=9, value=f"={cl(6)}{rr}+{cl(7)}{rr}+{cl(8)}{rr}")
+        cell.font = val_font; cell.border = border; cell.alignment = center
+        cell.number_format = "0.00E+00"
+        # Col J: XYZ = SQRT(I)
+        cell = ws5.cell(row=rr, column=10, value=f"=SQRT({cl(9)}{rr})")
+        cell.font = bold_val; cell.border = border; cell.alignment = center
+        cell.number_format = "0.00000000"
+        r5 += 1
+
+    # Leq / Lmax / L50 公式示範行
+    r5 += 1
+    end_row = data_start_row + len(raw_rows) - 1
+    jcol = cl(10)  # XYZ column
+    demo_formulas = [
+        ("Leq（RMS）", f"=SQRT(SUMPRODUCT({jcol}{data_start_row}:{jcol}{end_row}^2)/COUNT({jcol}{data_start_row}:{jcol}{end_row}))"),
+        ("Lmax", f"=MAX({jcol}{data_start_row}:{jcol}{end_row})"),
+        ("L50（中位數）", f"=PERCENTILE({jcol}{data_start_row}:{jcol}{end_row},0.5)"),
+    ]
+    for label, formula in demo_formulas:
+        ws5.cell(row=r5, column=1, value=label).font = cat_font
+        ws5.cell(row=r5, column=1).border = border
+        ws5.cell(row=r5, column=1).alignment = center
+        cell = ws5.cell(row=r5, column=2, value=f"公式：{formula}")
+        cell.font = code_font; cell.border = border
+        ws5.merge_cells(start_row=r5, start_column=2, end_row=r5, end_column=6)
+        cell = ws5.cell(row=r5, column=7, value=formula)
+        cell.font = bold_val; cell.border = border; cell.alignment = center
+        cell.number_format = "0.00000000"
+        ws5.merge_cells(start_row=r5, start_column=7, end_row=r5, end_column=10)
+        r5 += 1
+    r5 += 1
+
+# ── 五、從原始數據到統計量的流程 ──
+r5 = subtitle_cell(ws5, r5, "五、從 0.1 秒原始數據到統計量的完整流程", 10)
+
+flow_rows = [
+    ("步驟 1", "讀取 .RND 檔案", "逐檔讀取 CSV，篩選指定時段（如 10:00~11:00）"),
+    ("步驟 2", "清理特殊值", "將 --、UN、OL 視為無效值排除"),
+    ("步驟 3", "XYZ 三軸合成", "逐筆、逐頻段計算 XYZ = √(X² + Y² + Z²)"),
+    ("步驟 4", "計算統計量", "對 36,000 筆 XYZ 合成值計算 Leq、L5、L10、L50、L90、L95、Lmax"),
+    ("步驟 5", "單位轉換", "加速度 → 速度：v = a/(2πf)；加速度 dB：20·log₁₀(a/10⁻⁶)；速度 dB：20·log₁₀(v/2.54×10⁻⁸)"),
+    ("步驟 6", "VC 等級評定", "4~80 Hz 各頻段速度(μm/s) 與 VC 曲線限值比對，判定等級"),
+]
+flow_hdr = ["階段", "名稱", "說明"]
+for c, h in enumerate(flow_hdr, 1):
+    ws5.cell(row=r5, column=c, value=h)
+style_hdr(ws5, r5, 3)
+r5 += 1
+
+for step, name, desc in flow_rows:
+    ws5.cell(row=r5, column=1, value=step).font = cat_font
+    ws5.cell(row=r5, column=1).border = border
+    ws5.cell(row=r5, column=1).alignment = center
+    ws5.cell(row=r5, column=2, value=name).font = body_font
+    ws5.cell(row=r5, column=2).border = border
+    ws5.cell(row=r5, column=3, value=desc).font = val_font
+    ws5.cell(row=r5, column=3).border = border
+    ws5.merge_cells(start_row=r5, start_column=3, end_row=r5, end_column=8)
+    r5 += 1
+r5 += 1
+
+# ── 六、數據量計算 ──
+r5 = subtitle_cell(ws5, r5, "六、數據量對照", 10)
+qty_rows = [
+    ("量測時間", "1 小時 = 3,600 秒"),
+    ("取樣率", "10 筆/秒（0.1 秒間距）"),
+    ("總筆數", "3,600 × 10 = 36,000 筆"),
+    ("頻段數", "21 個 1/3 八度音帶（1~100 Hz）"),
+    ("軸向數", "3 軸（X、Y、Z）"),
+    ("原始數據欄位", "21 頻段 × 3 軸 = 63 欄（+ AP、APW 等輔助欄）"),
+    ("XYZ 合成後", "21 頻段 × 36,000 筆 = 756,000 個合成值"),
+]
+for label, val in qty_rows:
+    ws5.cell(row=r5, column=1, value=label).font = cat_font
+    ws5.cell(row=r5, column=1).border = border
+    ws5.cell(row=r5, column=2, value=val).font = val_font
+    ws5.cell(row=r5, column=2).border = border
+    ws5.merge_cells(start_row=r5, start_column=2, end_row=r5, end_column=5)
+    r5 += 1
+
+ws5.column_dimensions["A"].width = 10
+ws5.column_dimensions["B"].width = 22
+for c in range(3, 11):
+    ws5.column_dimensions[get_column_letter(c)].width = 16
+
+# ═══════════════════════════════════════
+# Sheet 6: 1秒聚合說明
+# ═══════════════════════════════════════
+with open(r"C:\Users\AC717\背景振動量測數據\raw_1s_demo.json", "r", encoding="utf-8") as _f:
+    RAW1S = json.load(_f)
+
+ws6 = wb.create_sheet("1秒聚合說明")
+r6 = 1
+
+r6 = title_cell(ws6, r6, "從 0.1 秒原始數據聚合為 1 秒 RMS — 以 10 Hz 頻段為例", 12)
+r6 += 1
+
+# ── 一、說明 ──
+r6 = subtitle_cell(ws6, r6, "一、聚合原理說明", 12)
+desc_rows = [
+    ("原始間距", "0.1 秒 / 筆（每秒 10 筆）"),
+    ("聚合間距", "1 秒 / 筆（App 預設「分析間距」）"),
+    ("聚合方式", "RMS（均方根）= √(1/N × Σaᵢ²)，N = 10"),
+    ("意義", "將每 10 筆 0.1 秒數據壓縮為 1 筆 1 秒等效值"),
+    ("公式", "a_1s = √((a₁² + a₂² + … + a₁₀²) / 10)"),
+    ("對應關係", "「實測範例」工作表中的 20 筆 XYZ 合成加速度 = 本表每秒 RMS 結果"),
+]
+for label, val in desc_rows:
+    ws6.cell(row=r6, column=1, value=label).font = cat_font
+    ws6.cell(row=r6, column=1).border = border
+    ws6.cell(row=r6, column=2, value=val).font = body_font
+    ws6.cell(row=r6, column=2).border = border
+    ws6.merge_cells(start_row=r6, start_column=2, end_row=r6, end_column=8)
+    r6 += 1
+r6 += 1
+
+cl = get_column_letter
+
+for band_name in ["10 Hz", "31.5 Hz"]:
+    raw_rows = RAW1S[band_name]
+    sec_label = "二" if band_name == "10 Hz" else "三"
+    r6 = subtitle_cell(ws6, r6,
+        f"{sec_label}、{band_name} 頻段 — 0.1 秒原始數據（200 筆 = 20 秒）", 12)
+
+    # ── 0.1s 原始數據表 ──
+    raw01_hdr = ["筆數", "時間", f"X_{band_name}\n(m/s²)", f"Y_{band_name}\n(m/s²)",
+                 f"Z_{band_name}\n(m/s²)", f"XYZ 合成\n= √(X²+Y²+Z²)", "所屬秒數"]
+    for c, h in enumerate(raw01_hdr, 1):
+        ws6.cell(row=r6, column=c, value=h)
+    style_hdr(ws6, r6, len(raw01_hdr))
+    r6 += 1
+
+    raw_data_start = r6
+    for i, row in enumerate(raw_rows):
+        rr = r6
+        sec_no = i // 10 + 1
+        t_short = row["time"].replace("2026-04-16 ", "")
+        # Col A: 筆數
+        cell = ws6.cell(row=rr, column=1, value=i+1)
+        cell.font = cat_font; cell.border = border; cell.alignment = center
+        # Col B: 時間
+        cell = ws6.cell(row=rr, column=2, value=t_short)
+        cell.font = val_font; cell.border = border; cell.alignment = center
+        # Col C/D/E: X, Y, Z
+        for ci, v in [(3, row["X"]), (4, row["Y"]), (5, row["Z"])]:
+            cell = ws6.cell(row=rr, column=ci, value=v)
+            cell.font = val_font; cell.border = border; cell.alignment = center
+            cell.number_format = "0.00000"
+        # Col F: XYZ = SQRT(C^2+D^2+E^2) 公式
+        cell = ws6.cell(row=rr, column=6,
+                        value=f"=SQRT({cl(3)}{rr}^2+{cl(4)}{rr}^2+{cl(5)}{rr}^2)")
+        cell.font = val_font; cell.border = border; cell.alignment = center
+        cell.number_format = "0.00000000"
+        # Col G: 所屬秒數
+        cell = ws6.cell(row=rr, column=7, value=f"第 {sec_no} 秒")
+        cell.font = note_font; cell.border = border; cell.alignment = center
+        # 每 10 行交替底色
+        if sec_no % 2 == 0:
+            alt_fill = PatternFill("solid", fgColor="F0F4F8")
+            for cc in range(1, 8):
+                ws6.cell(row=rr, column=cc).fill = alt_fill
+        r6 += 1
+    raw_data_end = r6 - 1
+    r6 += 1
+
+    # ── 1秒 RMS 聚合結果 ──
+    sec_label2 = "二" if band_name == "10 Hz" else "三"
+    r6 = subtitle_cell(ws6, r6,
+        f"{sec_label}（續）、{band_name} — 1 秒 RMS 聚合結果（20 筆）", 12)
+
+    rms_hdr = ["秒數", "起始時間", "0.1s 筆數範圍",
+               "RMS 公式\n= √(Σaᵢ²/10)", f"1秒 RMS 值\n(m/s²)",
+               f"速度轉換\nv = a/(2πf)\n(μm/s)"]
+    for c, h in enumerate(rms_hdr, 1):
+        ws6.cell(row=r6, column=c, value=h)
+    style_hdr(ws6, r6, len(rms_hdr))
+    r6 += 1
+
+    f_val = float(band_name.replace(" Hz", ""))
+    rms_data_start = r6
+    for s in range(20):
+        rr = r6
+        row0 = raw_data_start + s * 10
+        row9 = raw_data_start + s * 10 + 9
+        t_sec = raw_rows[s * 10]["time"].replace("2026-04-16 ", "").split(".")[0]
+        xyz_col = cl(6)  # F column = XYZ in raw table
+
+        cell = ws6.cell(row=rr, column=1, value=s+1)
+        cell.font = cat_font; cell.border = border; cell.alignment = center
+        cell = ws6.cell(row=rr, column=2, value=t_sec)
+        cell.font = val_font; cell.border = border; cell.alignment = center
+        cell = ws6.cell(row=rr, column=3, value=f"第 {s*10+1}~{s*10+10} 筆")
+        cell.font = note_font; cell.border = border; cell.alignment = center
+        # 公式文字說明
+        cell = ws6.cell(row=rr, column=4,
+                        value=f"SQRT(SUMSQ({xyz_col}{row0}:{xyz_col}{row9})/10)")
+        cell.font = code_font; cell.border = border; cell.alignment = center
+        # 實際 RMS 公式
+        cell = ws6.cell(row=rr, column=5,
+                        value=f"=SQRT(SUMSQ({xyz_col}{row0}:{xyz_col}{row9})/10)")
+        cell.font = bold_val; cell.border = border; cell.alignment = center
+        cell.number_format = "0.00000000"
+        # 速度轉換公式: v(μm/s) = a / (2*PI()*f) * 1000000
+        ecol = cl(5)
+        cell = ws6.cell(row=rr, column=6,
+                        value=f"={ecol}{rr}/(2*PI()*{f_val})*1000000")
+        cell.font = val_font; cell.border = border; cell.alignment = center
+        cell.number_format = "0.0000"
+
+        if (s+1) % 2 == 0:
+            alt_fill2 = PatternFill("solid", fgColor="F0F4F8")
+            for cc in range(1, 7):
+                ws6.cell(row=rr, column=cc).fill = alt_fill2
+        r6 += 1
+    rms_data_end = r6 - 1
+    r6 += 1
+
+    # ── 1秒 RMS 的統計量 ──
+    r6 = subtitle_cell(ws6, r6,
+        f"{sec_label}（統計）、{band_name} — 對 20 筆 1 秒 RMS 計算統計量", 12)
+
+    stat_hdr2 = ["統計量", "公式", "結果 (m/s²)", "結果 (μm/s)"]
+    for c, h in enumerate(stat_hdr2, 1):
+        ws6.cell(row=r6, column=c, value=h)
+    style_hdr(ws6, r6, 4)
+    r6 += 1
+
+    ecol5 = cl(5)  # 1s RMS column
+    stat_formulas = [
+        ("Leq (RMS)", f"SQRT(SUMPRODUCT({ecol5}{rms_data_start}:{ecol5}{rms_data_end}^2)/COUNT({ecol5}{rms_data_start}:{ecol5}{rms_data_end}))"),
+        ("L5 (P95)",  f"PERCENTILE({ecol5}{rms_data_start}:{ecol5}{rms_data_end},0.95)"),
+        ("L10 (P90)", f"PERCENTILE({ecol5}{rms_data_start}:{ecol5}{rms_data_end},0.90)"),
+        ("L50 (P50)", f"PERCENTILE({ecol5}{rms_data_start}:{ecol5}{rms_data_end},0.50)"),
+        ("L90 (P10)", f"PERCENTILE({ecol5}{rms_data_start}:{ecol5}{rms_data_end},0.10)"),
+        ("L95 (P5)",  f"PERCENTILE({ecol5}{rms_data_start}:{ecol5}{rms_data_end},0.05)"),
+        ("Lmax",      f"MAX({ecol5}{rms_data_start}:{ecol5}{rms_data_end})"),
+    ]
+    for sname, sfml in stat_formulas:
+        rr = r6
+        cell = ws6.cell(row=rr, column=1, value=sname)
+        cell.font = cat_font; cell.border = border; cell.alignment = center
+        cell = ws6.cell(row=rr, column=2, value=sfml)
+        cell.font = code_font; cell.border = border
+        # m/s² 結果
+        cell = ws6.cell(row=rr, column=3, value=f"={sfml}")
+        cell.font = bold_val; cell.border = border; cell.alignment = center
+        cell.number_format = "0.00000000"
+        # μm/s 轉換
+        c3col = cl(3)
+        cell = ws6.cell(row=rr, column=4,
+                        value=f"={c3col}{rr}/(2*PI()*{f_val})*1000000")
+        cell.font = val_font; cell.border = border; cell.alignment = center
+        cell.number_format = "0.0000"
+        r6 += 1
+    r6 += 2
+
+ws6.column_dimensions["A"].width = 10
+ws6.column_dimensions["B"].width = 20
+ws6.column_dimensions["C"].width = 16
+ws6.column_dimensions["D"].width = 50
+ws6.column_dimensions["E"].width = 18
+ws6.column_dimensions["F"].width = 18
+ws6.column_dimensions["G"].width = 12
+
 out = r"S:\noise\Vibration&Noise\project\15002-(寶山用地)第2期擴建-再生水輸水管線工程設計及監造工作(設計部分)\2.工作區\22527\公式說明.xlsx"
 wb.save(out)
 print(f"OK: {out}")
