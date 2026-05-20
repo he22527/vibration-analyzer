@@ -1,0 +1,16 @@
+# 原始量測數據（過大不上傳）
+0416/
+*.rnd
+
+# PyInstaller 產物
+dist/*.exe
+build/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+
+# 暫存
+*.tmp
+90336D00

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>背景振動量測數據分析</title>
+<script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Microsoft JhengHei","Segoe UI",sans-serif;background:#f0f4f8;color:#1a202c}
+.header{background:linear-gradient(135deg,#1a365d,#2c5282);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:18px}
+.header h1{font-size:1.25em;font-weight:600}
+.tabs{display:flex;gap:2px;margin-left:auto}
+.tabs button{padding:7px 20px;border:none;border-radius:6px 6px 0 0;cursor:pointer;font-size:.88em;background:rgba(255,255,255,.15);color:#fff}
+.tabs button.active{background:#f0f4f8;color:#1a365d;font-weight:600}
+.tab-content{display:none}.tab-content.active{display:flex}
+.container{gap:14px;padding:14px;max-width:1600px;margin:0 auto}
+.sidebar{width:280px;flex-shrink:0}
+.panel{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.08);padding:14px;margin-bottom:10px}
+.panel h3{font-size:.88em;color:#2c5282;margin-bottom:8px;border-bottom:1px solid #e2e8f0;padding-bottom:5px}
+.main{flex:1;min-width:0}
+label{display:block;font-size:.8em;margin:3px 0 2px;color:#4a5568}
+select,input[type=text],input[type=number]{width:100%;padding:5px 7px;border:1px solid #cbd5e0;border-radius:4px;font-size:.84em}
+textarea{width:100%;font-size:.8em;border:1px solid #cbd5e0;border-radius:4px;padding:6px}
+.cb-group{display:flex;flex-wrap:wrap;gap:5px 10px;margin:5px 0}
+.cb-group label,.radio-group label{display:inline-flex;align-items:center;gap:3px;font-size:.8em;cursor:pointer}
+.radio-group{display:flex;flex-wrap:wrap;gap:3px 12px;margin:5px 0}
+.note{font-size:.73em;color:#718096;margin-top:6px;line-height:1.5}
+.badge{display:inline-block;background:#ebf4ff;color:#2b6cb0;font-size:.7em;padding:2px 6px;border-radius:3px;margin-left:6px}
+#vc-chart{width:100%;height:560px;background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+table{border-collapse:collapse;width:100%;font-size:.78em}
+th,td{border:1px solid #e2e8f0;padding:4px 6px;text-align:center;white-space:nowrap}
+th{background:#edf2f7;font-weight:600;position:sticky;top:0}
+tr:nth-child(even){background:#f7fafc}
+.table-wrap{overflow-x:auto;margin-top:10px}
+.btn{padding:6px 16px;background:#2c5282;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.84em}
+.btn:hover{background:#1a365d}
+.env-table{width:100%;border-collapse:collapse;font-size:.85em}
+.env-table th,.env-table td{border:1px solid #cbd5e0;padding:5px 8px;text-align:center}
+.env-table th{background:#c8d8f0;font-weight:700}
+.env-table .odd{background:#f8f8f8}.env-table .even{background:#fff}
+.env-table .sep td{background:#c8d8f0;height:6px;padding:0}
+.env-table .sum-hdr td{background:#a8c8e8;font-weight:700;font-size:1.1em}
+.env-table .sum td{background:#dce8f5;font-size:1.1em}
+.env-info{font-size:.82em;color:#2c5282;margin-bottom:8px}
+#env-file-info{font-size:.8em;color:#555;margin-top:6px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>背景振動量測數據分析</h1>
+  <div class="tabs">
+    <button class="active" onclick="switchTab('vc')">VC 曲線</button>
+    <button onclick="switchTab('env')">環境振動</button>
+  </div>
+</div>
+
+<!-- ═══════════ VC 曲線分頁 ═══════════ -->
+<div id="tab-vc" class="tab-content active container">
+  <div class="sidebar">
+    <div class="panel">
+      <h3>Y 軸單位</h3>
+      <div class="radio-group" id="yunit-group">
+        <label><input type="radio" name="yunit" value="um_s" checked> μm/s</label>
+        <label><input type="radio" name="yunit" value="uin_s"> μin/s</label>
+        <label><input type="radio" name="yunit" value="dB_vel"> 速度位準 dB</label>
+        <label><input type="radio" name="yunit" value="dB_acc"> 加速度位準 dB</label>
+      </div>
+      <p class="note">速度位準：ref 2.54×10⁻⁸ m/s<br>加速度位準：ref 10⁻⁶ m/s²</p>
+    </div>
+    <div class="panel">
+      <h3>顯示 VC 曲線</h3>
+      <div class="cb-group" id="vc-curves-group">
+        <label><input type="checkbox" value="工廠 (ISO)"> 工廠 (ISO)</label>
+        <label><input type="checkbox" value="辦公室 (ISO)"> 辦公室 (ISO)</label>
+        <label><input type="checkbox" value="住宅 (ISO)"> 住宅 (ISO)</label>
+        <label><input type="checkbox" value="手術室 (ISO)" checked> 手術室 (ISO)</label>
+        <label><input type="checkbox" value="VC-A" checked> VC-A</label>
+        <label><input type="checkbox" value="VC-B" checked> VC-B</label>
+        <label><input type="checkbox" value="VC-C" checked> VC-C</label>
+        <label><input type="checkbox" value="VC-D" checked> VC-D</label>
+        <label><input type="checkbox" value="VC-E" checked> VC-E</label>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>自訂量測數據</h3>
+      <p class="note" style="margin-bottom:6px">輸入各頻段速度值（μm/s），逗號分隔，14 個值對應 4~80 Hz。</p>
+      <label>量測數據（μm/s）</label>
+      <textarea id="user-data" rows="3" placeholder="例: 45,38,30,25,22,20,18,16,14,12,10,9,8,7"></textarea>
+      <label>數據標籤</label>
+      <input type="text" id="user-label" value="量測數據">
+      <button class="btn" onclick="updateChart()" style="margin-top:8px">更新圖表</button>
+    </div>
+    <div class="panel">
+      <h3>VC 等級評定</h3>
+      <div id="grade-result" style="font-size:.85em;color:#555;min-height:28px">請輸入量測數據後點擊「更新圖表」</div>
+    </div>
+  </div>
+  <div class="main">
+    <div id="vc-chart"></div>
+    <div class="panel" style="margin-top:10px">
+      <h3>VC 曲線標準值參考表 <span class="badge">Ungar &amp; Gordon, 1991</span></h3>
+      <div class="table-wrap" id="ref-table"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 環境振動分頁 ═══════════ -->
+<div id="tab-env" class="tab-content container">
+  <div class="sidebar">
+    <div class="panel">
+      <h3>載入 CSV 數據</h3>
+      <p class="note" style="margin-bottom:8px">
+        支援由桌面版程式匯出的 CSV 統計表。<br>
+        或手動貼上逐時統計數據。
+      </p>
+      <input type="file" id="env-csv-file" accept=".csv" style="font-size:.8em">
+      <div id="env-file-info"></div>
+    </div>
+    <div class="panel">
+      <h3>手動輸入（逐時 dB 值）</h3>
+      <p class="note" style="margin-bottom:6px">每列：時段, Lveq, Lvmax, Lv5, Lv10, Lv50, Lv90, Lv95</p>
+      <textarea id="env-manual" rows="8" placeholder="10~11, 49.8, 69.9, 52.7, 51.4, 48.6, 47.6, 47.4
+11~12, 49.6, 68.9, 51.6, 50.5, 48.5, 47.7, 47.5"></textarea>
+      <button class="btn" onclick="parseManualEnv()" style="margin-top:8px">載入數據</button>
+    </div>
+    <div class="panel">
+      <h3>時段設定</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div><label>早 開始</label><input type="number" id="p-am-s" value="5" min="0" max="23"></div>
+        <div><label>早 結束</label><input type="number" id="p-am-e" value="7" min="0" max="23"></div>
+        <div><label>日 開始</label><input type="number" id="p-day-s" value="7" min="0" max="23"></div>
+        <div><label>日 結束</label><input type="number" id="p-day-e" value="20" min="0" max="23"></div>
+        <div><label>晚 開始</label><input type="number" id="p-eve-s" value="20" min="0" max="23"></div>
+        <div><label>晚 結束</label><input type="number" id="p-eve-e" value="22" min="0" max="23"></div>
+        <div><label>夜 開始</label><input type="number" id="p-nit-s" value="22" min="0" max="23"></div>
+        <div><label>夜 結束</label><input type="number" id="p-nit-e" value="5" min="0" max="23"></div>
+      </div>
+      <button class="btn" onclick="renderEnvTable()" style="margin-top:8px;width:100%">更新摘要</button>
+    </div>
+  </div>
+  <div class="main">
+    <div class="panel">
+      <h3>環境振動統計表</h3>
+      <div class="env-info" id="env-info">尚未載入數據</div>
+      <div class="table-wrap" id="env-table-wrap"></div>
+      <button class="btn" onclick="exportEnvCSV()" style="margin-top:10px">匯出 CSV</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════ 分頁切換 ═══════ */
+function switchTab(id) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  event.target.classList.add('active');
+}
+
+/* ═══════ VC 曲線 ═══════ */
+const VC_FREQS = [4,5,6.3,8,10,12.5,16,20,25,31.5,40,50,63,80];
+const VC_CURVES = {
+  "工廠 (ISO)":   {flat:803.2,db:90,color:"#2a2a2a"},
+  "辦公室 (ISO)": {flat:402.6,db:84,color:"#484848"},
+  "住宅 (ISO)":   {flat:201.8,db:78,color:"#636363"},
+  "手術室 (ISO)": {flat:101.1,db:72,color:"#7d7d7d"},
+  "VC-A":         {flat:50.7, db:66,color:"#1a3f7a"},
+  "VC-B":         {flat:25.4, db:60,color:"#1b5e20"},
+  "VC-C":         {flat:12.7, db:54,color:"#b71c1c"},
+  "VC-D":         {flat:6.38, db:48,color:"#e65100"},
+  "VC-E":         {flat:3.20, db:42,color:"#6a1b9a"},
+};
+const VC_ORDER=["VC-E","VC-D","VC-C","VC-B","VC-A","手術室 (ISO)","住宅 (ISO)","辦公室 (ISO)","工廠 (ISO)"];
+const DB_REF=0.0254;
+
+function vcVal(flat,f){if(f>=8)return flat;const s=Math.round(Math.log2(8/f)*3);return flat*Math.pow(10,s*2/20)}
+function vcVals(flat){return VC_FREQS.map(f=>vcVal(flat,f))}
+function disp(v,f){
+  if(v<=0||!isFinite(v))return NaN;
+  const u=document.querySelector('input[name="yunit"]:checked').value;
+  if(u==="uin_s")return v/0.0254;
+  if(u==="dB_vel")return 20*Math.log10(v/DB_REF);
+  if(u==="dB_acc")return 20*Math.log10(v*2*Math.PI*f);
+  return v;
+}
+function yLabel(){
+  const u=document.querySelector('input[name="yunit"]:checked').value;
+  return{um_s:"rms Velocity, μm/s",uin_s:"rms Velocity, μin/s",dB_vel:"Velocity Level, dB re 2.54×10⁻⁸ m/s",dB_acc:"Acceleration Level, dB re 10⁻⁶ m/s²"}[u]||"";
+}
+function isDb(){const u=document.querySelector('input[name="yunit"]:checked').value;return u==="dB_vel"||u==="dB_acc"}
+function vcGrade(bv){for(const n of VC_ORDER){const fl=VC_CURVES[n].flat;if(bv.every(([f,v])=>v<=vcVal(fl,f)))return n}return"超過工廠 (ISO)"}
+
+function updateChart(){
+  const traces=[];
+  document.querySelectorAll('#vc-curves-group input:checked').forEach(cb=>{
+    const n=cb.value,info=VC_CURVES[n],vals=vcVals(info.flat);
+    traces.push({x:VC_FREQS,y:vals.map((v,i)=>disp(v,VC_FREQS[i])),mode:"lines",name:n,line:{color:info.color,width:2},hovertemplate:`${n}<br>%{x} Hz: %{y:.2f}<extra></extra>`});
+  });
+  const ds=document.getElementById("user-data").value.trim(),ul=document.getElementById("user-label").value||"量測數據";
+  let gh="";
+  if(ds){
+    const vals=ds.split(/[,，\s]+/).map(Number).filter(v=>!isNaN(v)&&v>0);
+    if(vals.length===14){
+      traces.push({x:VC_FREQS,y:vals.map((v,i)=>disp(v,VC_FREQS[i])),mode:"lines+markers",name:ul,line:{color:"#e53e3e",width:2.5},marker:{size:5}});
+      const g=vcGrade(VC_FREQS.map((f,i)=>[f,vals[i]])),pk=Math.max(...vals),pf=VC_FREQS[vals.indexOf(pk)];
+      gh=`<strong>評定結果：${g}</strong><br>峰值：${pk.toFixed(2)} μm/s @ ${pf} Hz`;
+    }else gh=`<span style="color:#c53030">需要 14 個數值（目前 ${vals.length} 個）</span>`;
+  }
+  document.getElementById("grade-result").innerHTML=gh||"請輸入量測數據後點擊「更新圖表」";
+  const db=isDb();
+  const layout={title:{text:"Generic Vibration Criterion (VC) Curves — Ungar & Gordon (1991)",font:{size:14}},
+    xaxis:{title:"1/3 Octave Band Center Frequency, Hz",type:"log",range:[Math.log10(3.5),Math.log10(90)],tickvals:VC_FREQS,ticktext:VC_FREQS.map(String),gridcolor:"#e2e8f0"},
+    yaxis:{title:yLabel(),type:db?"linear":"log",gridcolor:"#e2e8f0"},
+    showlegend:true,legend:{x:.01,y:.99,bgcolor:"rgba(255,255,255,.85)",font:{size:11}},
+    margin:{l:70,r:30,t:50,b:60},plot_bgcolor:"white",paper_bgcolor:"white",hovermode:"x unified"};
+  if(db){const u=document.querySelector('input[name="yunit"]:checked').value;layout.yaxis.range=u==="dB_acc"?[20,140]:[20,120]}
+  Plotly.react("vc-chart",traces,layout,{responsive:true});
+}
+
+function buildRefTable(){
+  const u=document.querySelector('input[name="yunit"]:checked').value;
+  let ul,cv;
+  switch(u){
+    case"uin_s":ul="μin/s";cv=(v,f)=>(v/0.0254).toFixed(0);break;
+    case"dB_vel":ul="dB";cv=(v,f)=>(20*Math.log10(v/DB_REF)).toFixed(0);break;
+    case"dB_acc":ul="dB";cv=(v,f)=>(20*Math.log10(v*2*Math.PI*f)).toFixed(1);break;
+    default:ul="μm/s";cv=(v,f)=>v<10?v.toFixed(2):v<100?v.toFixed(1):v.toFixed(0);
+  }
+  let h="<table><tr><th>場所</th><th>單位</th>";
+  VC_FREQS.forEach(f=>h+=`<th>${f} Hz</th>`);h+="</tr>";
+  for(const[n,info]of Object.entries(VC_CURVES)){const vals=vcVals(info.flat);h+=`<tr><td style="text-align:left;font-weight:600">${n}</td><td>${ul}</td>`;vals.forEach((v,i)=>h+=`<td>${cv(v,VC_FREQS[i])}</td>`);h+="</tr>"}
+  h+="</table>";document.getElementById("ref-table").innerHTML=h;
+}
+document.querySelectorAll('input[name="yunit"]').forEach(r=>r.addEventListener("change",()=>{updateChart();buildRefTable()}));
+document.querySelectorAll('#vc-curves-group input').forEach(cb=>cb.addEventListener("change",updateChart));
+updateChart();buildRefTable();
+
+/* ═══════ 環境振動 ═══════ */
+let envData = []; // [{hour, label, Lveq, Lvmax, Lv5, Lv10, Lv50, Lv90, Lv95}]
+
+function calcStats(arr) {
+  const v = arr.filter(x => isFinite(x) && x > 0).sort((a,b) => a-b);
+  if (!v.length) return {Leq:NaN,Lmax:NaN,L5:NaN,L10:NaN,L50:NaN,L90:NaN,L95:NaN};
+  const rms = Math.sqrt(v.reduce((s,x)=>s+x*x,0)/v.length);
+  const pct = (p) => { const i=(1-p/100)*(v.length-1); const lo=Math.floor(i); return lo>=v.length-1?v[v.length-1]:v[lo]+(i-lo)*(v[lo+1]-v[lo]); };
+  return {Leq:rms, Lmax:Math.max(...v), L5:pct(5), L10:pct(10), L50:pct(50), L90:pct(90), L95:pct(95)};
+}
+
+function parseManualEnv() {
+  const txt = document.getElementById("env-manual").value.trim();
+  if (!txt) return;
+  envData = [];
+  txt.split('\n').forEach(line => {
+    const parts = line.split(/[,，\t]+/).map(s => s.trim());
+    if (parts.length < 8) return;
+    const label = parts[0];
+    const m = label.match(/(\d+)/);
+    const hour = m ? parseInt(m[1]) : envData.length;
+    envData.push({
+      hour, label,
+      Lveq: parseFloat(parts[1]), Lvmax: parseFloat(parts[2]),
+      Lv5: parseFloat(parts[3]), Lv10: parseFloat(parts[4]),
+      Lv50: parseFloat(parts[5]), Lv90: parseFloat(parts[6]),
+      Lv95: parseFloat(parts[7])
+    });
+  });
+  document.getElementById("env-info").textContent = `已載入 ${envData.length} 筆逐時數據`;
+  renderEnvTable();
+}
+
+document.getElementById("env-csv-file").addEventListener("change", function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    const lines = ev.target.result.split('\n').map(l => l.trim()).filter(l => l);
+    if (lines.length < 2) return;
+    envData = [];
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(/[,，\t]+/).map(s => s.trim().replace(/^"|"$/g, ''));
+      if (parts.length < 8) continue;
+      const label = parts[0];
+      if (!label || label === '時間') continue;
+      const m = label.match(/(\d+)/);
+      const hour = m ? parseInt(m[1]) : i - 1;
+      envData.push({
+        hour, label,
+        Lveq: parseFloat(parts[1]), Lvmax: parseFloat(parts[2]),
+        Lv5: parseFloat(parts[3]), Lv10: parseFloat(parts[4]),
+        Lv50: parseFloat(parts[5]), Lv90: parseFloat(parts[6]),
+        Lv95: parseFloat(parts[7])
+      });
+    }
+    document.getElementById("env-file-info").textContent = `${file.name} — ${envData.length} 筆`;
+    document.getElementById("env-info").textContent = `已載入 ${envData.length} 筆逐時數據（${file.name}）`;
+    renderEnvTable();
+  };
+  reader.readAsText(file, 'utf-8');
+});
+
+function renderEnvTable() {
+  if (!envData.length) { document.getElementById("env-table-wrap").innerHTML = "<p style='color:#999'>尚未載入數據</p>"; return; }
+  const fmt = v => (isNaN(v) || !isFinite(v)) ? "—" : v.toFixed(1);
+  let h = '<table class="env-table"><tr><th>時間</th><th>Lveq</th><th>Lvmax</th><th>Lv5</th><th>Lv10</th><th>Lv50</th><th>Lv90</th><th>Lv95</th></tr>';
+  envData.forEach((d, i) => {
+    if (d.label === '' || d.label === '監測成果') return;
+    h += `<tr class="${i%2===0?'odd':'even'}"><td>${d.label}</td><td>${fmt(d.Lveq)}</td><td>${fmt(d.Lvmax)}</td><td>${fmt(d.Lv5)}</td><td>${fmt(d.Lv10)}</td><td>${fmt(d.Lv50)}</td><td>${fmt(d.Lv90)}</td><td>${fmt(d.Lv95)}</td></tr>`;
+  });
+
+  // 時段摘要
+  const ps = parseInt(document.getElementById("p-am-s").value);
+  const pe = parseInt(document.getElementById("p-am-e").value);
+  const ds = parseInt(document.getElementById("p-day-s").value);
+  const de = parseInt(document.getElementById("p-day-e").value);
+  const es = parseInt(document.getElementById("p-eve-s").value);
+  const ee = parseInt(document.getElementById("p-eve-e").value);
+  const ns = parseInt(document.getElementById("p-nit-s").value);
+  const ne = parseInt(document.getElementById("p-nit-e").value);
+  const periods = [
+    [`L早(${String(ps).padStart(2,'0')}~${String(pe).padStart(2,'0')})`, ps, pe],
+    [`L日(${String(ds).padStart(2,'0')}~${String(de).padStart(2,'0')})`, ds, de],
+    [`L晚(${String(es).padStart(2,'0')}~${String(ee).padStart(2,'0')})`, es, ee],
+    [`L夜(${String(ns).padStart(2,'0')}~${String(ne).padStart(2,'0')})`, ns, ne],
+  ];
+  function inRange(hour, s, e) {
+    return s < e ? (hour >= s && hour < e) : (hour >= s || hour < e);
+  }
+  h += '<tr class="sep"><td colspan="8"></td></tr>';
+  h += '<tr class="sum-hdr"><td>監測成果</td><td></td><td></td><td>Lv5</td><td>Lv10</td><td></td><td></td><td>Lvmax</td></tr>';
+  periods.forEach(([label, hs, he]) => {
+    const subset = envData.filter(d => inRange(d.hour, hs, he));
+    if (!subset.length) { h += `<tr class="sum"><td>${label}</td><td></td><td></td><td>—</td><td>—</td><td></td><td></td><td>—</td></tr>`; return; }
+    const lv5vals = subset.map(d => d.Lv5).filter(isFinite);
+    const lv10vals = subset.map(d => d.Lv10).filter(isFinite);
+    const lmaxvals = subset.map(d => d.Lvmax).filter(isFinite);
+    const maxOf = a => a.length ? Math.max(...a) : NaN;
+    h += `<tr class="sum"><td>${label}</td><td></td><td></td><td>${fmt(maxOf(lv5vals))}</td><td>${fmt(maxOf(lv10vals))}</td><td></td><td></td><td>${fmt(maxOf(lmaxvals))}</td></tr>`;
+  });
+  h += '</table>';
+  document.getElementById("env-table-wrap").innerHTML = h;
+}
+
+function exportEnvCSV() {
+  if (!envData.length) { alert("尚未載入數據"); return; }
+  let csv = "﻿時間,Lveq,Lvmax,Lv5,Lv10,Lv50,Lv90,Lv95\n";
+  const fmt = v => (isNaN(v)||!isFinite(v)) ? "" : v.toFixed(1);
+  envData.forEach(d => {
+    csv += `${d.label},${fmt(d.Lveq)},${fmt(d.Lvmax)},${fmt(d.Lv5)},${fmt(d.Lv10)},${fmt(d.Lv50)},${fmt(d.Lv90)},${fmt(d.Lv95)}\n`;
+  });
+  const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "環境振動統計.csv";
+  a.click();
+}
+
+renderEnvTable();
+</script>
+</body>
+</html>
