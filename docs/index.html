@@ -3,79 +3,208 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>背景振動量測數據分析</title>
+<title>背景振動量測數據分析工具</title>
 <script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:"Microsoft JhengHei","Segoe UI",sans-serif;background:#f0f4f8;color:#1a202c}
-.header{background:linear-gradient(135deg,#1a365d,#2c5282);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:18px}
-.header h1{font-size:1.25em;font-weight:600}
-.tabs{display:flex;gap:2px;margin-left:auto}
-.tabs button{padding:7px 20px;border:none;border-radius:6px 6px 0 0;cursor:pointer;font-size:.88em;background:rgba(255,255,255,.15);color:#fff}
+body{font-family:"Microsoft JhengHei","Segoe UI",sans-serif;background:#f0f4f8;color:#1a202c;font-size:14px}
+.header{background:linear-gradient(135deg,#1a365d,#2c5282);color:#fff;padding:10px 24px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.header h1{font-size:1.15em;font-weight:600;white-space:nowrap}
+.tabs{display:flex;gap:2px;flex-wrap:wrap}
+.tabs button{padding:6px 14px;border:none;border-radius:6px 6px 0 0;cursor:pointer;font-size:.82em;background:rgba(255,255,255,.15);color:#fff;white-space:nowrap}
 .tabs button.active{background:#f0f4f8;color:#1a365d;font-weight:600}
 .tab-content{display:none}.tab-content.active{display:flex}
-.container{gap:14px;padding:14px;max-width:1600px;margin:0 auto}
-.sidebar{width:280px;flex-shrink:0}
-.panel{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.08);padding:14px;margin-bottom:10px}
-.panel h3{font-size:.88em;color:#2c5282;margin-bottom:8px;border-bottom:1px solid #e2e8f0;padding-bottom:5px}
+.container{gap:12px;padding:12px;max-width:1700px;margin:0 auto}
+.sidebar{width:290px;flex-shrink:0;max-height:calc(100vh - 60px);overflow-y:auto}
+.panel{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.08);padding:12px;margin-bottom:8px}
+.panel h3{font-size:.84em;color:#2c5282;margin-bottom:6px;border-bottom:1px solid #e2e8f0;padding-bottom:4px}
 .main{flex:1;min-width:0}
-label{display:block;font-size:.8em;margin:3px 0 2px;color:#4a5568}
-select,input[type=text],input[type=number]{width:100%;padding:5px 7px;border:1px solid #cbd5e0;border-radius:4px;font-size:.84em}
-textarea{width:100%;font-size:.8em;border:1px solid #cbd5e0;border-radius:4px;padding:6px}
-.cb-group{display:flex;flex-wrap:wrap;gap:5px 10px;margin:5px 0}
-.cb-group label,.radio-group label{display:inline-flex;align-items:center;gap:3px;font-size:.8em;cursor:pointer}
-.radio-group{display:flex;flex-wrap:wrap;gap:3px 12px;margin:5px 0}
-.note{font-size:.73em;color:#718096;margin-top:6px;line-height:1.5}
-.badge{display:inline-block;background:#ebf4ff;color:#2b6cb0;font-size:.7em;padding:2px 6px;border-radius:3px;margin-left:6px}
-#vc-chart{width:100%;height:560px;background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
-table{border-collapse:collapse;width:100%;font-size:.78em}
-th,td{border:1px solid #e2e8f0;padding:4px 6px;text-align:center;white-space:nowrap}
-th{background:#edf2f7;font-weight:600;position:sticky;top:0}
+label{display:block;font-size:.78em;margin:2px 0 1px;color:#4a5568}
+select,input[type=text],input[type=number],input[type=file]{width:100%;padding:4px 6px;border:1px solid #cbd5e0;border-radius:4px;font-size:.82em}
+textarea{width:100%;font-size:.78em;border:1px solid #cbd5e0;border-radius:4px;padding:5px}
+.cb-group{display:flex;flex-wrap:wrap;gap:4px 8px;margin:4px 0}
+.cb-group label,.radio-group label{display:inline-flex;align-items:center;gap:3px;font-size:.78em;cursor:pointer}
+.radio-group{display:flex;flex-wrap:wrap;gap:3px 10px;margin:4px 0}
+.note{font-size:.72em;color:#718096;margin-top:5px;line-height:1.4}
+.badge{display:inline-block;background:#ebf4ff;color:#2b6cb0;font-size:.68em;padding:2px 5px;border-radius:3px;margin-left:4px}
+.chart-box{width:100%;height:520px;background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+table{border-collapse:collapse;width:100%;font-size:.76em}
+th,td{border:1px solid #e2e8f0;padding:3px 5px;text-align:center;white-space:nowrap}
+th{background:#edf2f7;font-weight:600;position:sticky;top:0;z-index:1}
 tr:nth-child(even){background:#f7fafc}
-.table-wrap{overflow-x:auto;margin-top:10px}
-.btn{padding:6px 16px;background:#2c5282;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.84em}
+.table-wrap{overflow:auto;max-height:500px;margin-top:8px}
+.btn{padding:5px 14px;background:#2c5282;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.82em}
 .btn:hover{background:#1a365d}
-.env-table{width:100%;border-collapse:collapse;font-size:.85em}
-.env-table th,.env-table td{border:1px solid #cbd5e0;padding:5px 8px;text-align:center}
+.btn-sm{padding:3px 10px;font-size:.76em}
+.stat-row{background:#dbeafe!important;font-weight:600}
+.env-table{width:100%;border-collapse:collapse;font-size:.82em}
+.env-table th,.env-table td{border:1px solid #cbd5e0;padding:4px 6px;text-align:center}
 .env-table th{background:#c8d8f0;font-weight:700}
 .env-table .odd{background:#f8f8f8}.env-table .even{background:#fff}
-.env-table .sep td{background:#c8d8f0;height:6px;padding:0}
-.env-table .sum-hdr td{background:#a8c8e8;font-weight:700;font-size:1.1em}
-.env-table .sum td{background:#dce8f5;font-size:1.1em}
-.env-info{font-size:.82em;color:#2c5282;margin-bottom:8px}
-#env-file-info{font-size:.8em;color:#555;margin-top:6px}
+.env-table .sep td{background:#c8d8f0;height:5px;padding:0}
+.env-table .sum-hdr td{background:#a8c8e8;font-weight:700;font-size:1.05em}
+.env-table .sum td{background:#dce8f5;font-size:1.05em}
+.stabs{display:flex;gap:1px;margin-bottom:8px}
+.stabs button{flex:1;padding:5px;border:1px solid #cbd5e0;background:#edf2f7;cursor:pointer;font-size:.78em;border-radius:4px 4px 0 0}
+.stabs button.active{background:#fff;border-bottom-color:#fff;font-weight:600;color:#2c5282}
+.stab{display:none}.stab.active{display:block}
+.info-row{display:flex;justify-content:space-between;padding:3px 0;font-size:.82em}
+.info-val{color:#2c5282;font-weight:700;font-size:1.1em}
 </style>
 </head>
 <body>
 
 <div class="header">
-  <h1>背景振動量測數據分析</h1>
-  <div class="tabs">
-    <button class="active" onclick="switchTab('vc')">VC 曲線</button>
-    <button onclick="switchTab('env')">環境振動</button>
+  <h1>背景振動量測數據分析工具</h1>
+  <div class="tabs" id="main-tabs">
+    <button class="active" onclick="swTab('raw')">原始數據</button>
+    <button onclick="swTab('time')">時間序列</button>
+    <button onclick="swTab('freq')">頻率分析</button>
+    <button onclick="swTab('stats')">統計表</button>
+    <button onclick="swTab('vc')">VC 曲線</button>
+    <button onclick="swTab('env')">環境振動</button>
   </div>
 </div>
 
-<!-- ═══════════ VC 曲線分頁 ═══════════ -->
-<div id="tab-vc" class="tab-content active container">
+<!-- ═══════ 原始數據 ═══════ -->
+<div id="tab-raw" class="tab-content active container">
   <div class="sidebar">
-    <div class="panel">
-      <h3>Y 軸單位</h3>
-      <div class="radio-group" id="yunit-group">
-        <label><input type="radio" name="yunit" value="um_s" checked> μm/s</label>
-        <label><input type="radio" name="yunit" value="uin_s"> μin/s</label>
-        <label><input type="radio" name="yunit" value="dB_vel"> 速度位準 dB</label>
-        <label><input type="radio" name="yunit" value="dB_acc"> 加速度位準 dB</label>
-      </div>
-      <p class="note">速度位準：ref 2.54×10⁻⁸ m/s<br>加速度位準：ref 10⁻⁶ m/s²</p>
+    <div class="stabs">
+      <button class="active" onclick="sTab(this,'si-raw')">資料輸入</button>
+      <button onclick="sTab(this,'sa-raw')">數據分析</button>
     </div>
-    <div class="panel">
-      <h3>顯示 VC 曲線</h3>
-      <div class="cb-group" id="vc-curves-group">
-        <label><input type="checkbox" value="工廠 (ISO)"> 工廠 (ISO)</label>
-        <label><input type="checkbox" value="辦公室 (ISO)"> 辦公室 (ISO)</label>
-        <label><input type="checkbox" value="住宅 (ISO)"> 住宅 (ISO)</label>
-        <label><input type="checkbox" value="手術室 (ISO)" checked> 手術室 (ISO)</label>
+    <div id="si-raw" class="stab active">
+      <div class="panel"><h3>起訖時間</h3>
+        <div class="info-row"><span>開始日期:</span><span class="info-val" id="di-sd">—</span></div>
+        <div class="info-row"><span>開始時間:</span><span class="info-val" id="di-st">—</span></div>
+        <div class="info-row"><span>結束日期:</span><span class="info-val" id="di-ed">—</span></div>
+        <div class="info-row"><span>結束時間:</span><span class="info-val" id="di-et">—</span></div>
+        <p class="note">自動讀取 CSV 之量測起訖時間</p>
+      </div>
+      <div class="panel"><h3>頻率範圍</h3>
+        <div class="info-row"><span>最低頻率:</span><span class="info-val" id="di-fl">—</span></div>
+        <div class="info-row"><span>最高頻率:</span><span class="info-val" id="di-fh">—</span></div>
+      </div>
+      <div class="panel"><h3>取樣時間</h3><div class="info-val" id="di-samp">—</div></div>
+      <div class="panel"><h3>檔案資訊</h3><div id="di-fi" style="font-size:.8em;color:#555">未載入</div></div>
+    </div>
+    <div id="sa-raw" class="stab">
+      <div class="panel"><h3>載入數據 CSV</h3>
+        <p class="note" style="margin-bottom:6px">載入桌面版匯出的原始數據 CSV</p>
+        <input type="file" id="raw-csv" accept=".csv">
+      </div>
+      <div class="panel"><h3>振動量單位</h3>
+        <select id="unit-sel">
+          <option value="m/s2">加速度 m/s²</option>
+          <option value="g">加速度 g — 9.80665 m/s²</option>
+          <option value="Gal">加速度 Gal — 0.01 m/s²</option>
+          <option value="dB6">加速度 dB — ref 10⁻⁶ m/s²</option>
+          <option value="dB5">加速度 dB — ref 10⁻⁵ m/s²</option>
+          <option value="dBWm">加速度 dB — 頻率Wm加權</option>
+          <option value="m/s">速度 m/s</option>
+          <option value="dBv">速度 dB — ref 2.54×10⁻⁸ m/s</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="panel"><h3>原始數據表</h3>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+        <button class="btn btn-sm" onclick="expCSV('raw-tbl','原始數據')">匯出 CSV</button>
+        <span style="font-size:.78em;color:#718096" id="raw-info">尚未載入數據</span>
+      </div>
+      <div class="table-wrap" id="raw-wrap"><p class="note">請於「數據分析」分頁載入 CSV</p></div>
+    </div>
+    <div class="panel" style="margin-top:8px"><h3>統計量摘要（寬頻）</h3>
+      <div class="table-wrap" id="raw-stat"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ 時間序列 ═══════ -->
+<div id="tab-time" class="tab-content container">
+  <div class="sidebar">
+    <div class="panel"><h3>載入數據 CSV</h3><input type="file" id="time-csv" accept=".csv">
+      <p class="note">桌面版匯出的原始數據 CSV</p></div>
+    <div class="panel"><h3>顯示軸別</h3>
+      <div class="cb-group">
+        <label><input type="checkbox" id="ts-x" checked> X 軸</label>
+        <label><input type="checkbox" id="ts-y" checked> Y 軸</label>
+        <label><input type="checkbox" id="ts-z" checked> Z 軸</label>
+      </div>
+      <button class="btn" onclick="plotTS()" style="margin-top:6px">更新圖表</button>
+      <button class="btn btn-sm" onclick="expImg('time-chart','時間序列')" style="margin-top:4px">匯出圖表</button>
+    </div>
+  </div>
+  <div class="main"><div class="chart-box" id="time-chart"></div></div>
+</div>
+
+<!-- ═══════ 頻率分析 ═══════ -->
+<div id="tab-freq" class="tab-content container">
+  <div class="sidebar">
+    <div class="panel"><h3>載入統計表 CSV</h3><input type="file" id="freq-csv" accept=".csv"></div>
+    <div class="panel"><h3>統計量</h3>
+      <div class="radio-group">
+        <label><input type="radio" name="fqs" value="Leq" checked> Leq</label>
+        <label><input type="radio" name="fqs" value="L5"> L5</label>
+        <label><input type="radio" name="fqs" value="L10"> L10</label>
+        <label><input type="radio" name="fqs" value="L50"> L50</label>
+        <label><input type="radio" name="fqs" value="Lmax"> Lmax</label>
+      </div>
+      <h3 style="margin-top:8px">軸別</h3>
+      <div class="cb-group">
+        <label><input type="checkbox" id="fq-x" checked> X</label>
+        <label><input type="checkbox" id="fq-y" checked> Y</label>
+        <label><input type="checkbox" id="fq-z" checked> Z</label>
+        <label><input type="checkbox" id="fq-xyz" checked> XYZ</label>
+      </div>
+      <button class="btn" onclick="plotFQ()" style="margin-top:6px">更新圖表</button>
+      <button class="btn btn-sm" onclick="expImg('freq-chart','頻率分析')" style="margin-top:4px">匯出圖表</button>
+    </div>
+  </div>
+  <div class="main"><div class="chart-box" id="freq-chart"></div></div>
+</div>
+
+<!-- ═══════ 統計表 ═══════ -->
+<div id="tab-stats" class="tab-content container">
+  <div class="sidebar">
+    <div class="panel"><h3>載入統計表 CSV</h3><input type="file" id="stats-csv" accept=".csv">
+      <p class="note">桌面版匯出的統計表 CSV</p></div>
+    <div class="panel"><h3>顯示軸別</h3>
+      <div class="radio-group">
+        <label><input type="radio" name="sa" value="全部" checked> 全部</label>
+        <label><input type="radio" name="sa" value="X"> X</label>
+        <label><input type="radio" name="sa" value="Y"> Y</label>
+        <label><input type="radio" name="sa" value="Z"> Z</label>
+        <label><input type="radio" name="sa" value="XYZ"> XYZ</label>
+      </div>
+      <button class="btn" onclick="showStats()" style="margin-top:6px">更新</button>
+      <button class="btn btn-sm" onclick="expCSV('st-tbl','統計表')" style="margin-top:4px">匯出 CSV</button>
+    </div>
+  </div>
+  <div class="main"><div class="panel"><h3>振動統計表</h3>
+    <div class="table-wrap" id="st-wrap"><p class="note">請載入統計表 CSV</p></div>
+  </div></div>
+</div>
+
+<!-- ═══════ VC 曲線 ═══════ -->
+<div id="tab-vc" class="tab-content container">
+  <div class="sidebar">
+    <div class="panel"><h3>Y 軸單位</h3>
+      <div class="radio-group">
+        <label><input type="radio" name="yu" value="um" checked> μm/s</label>
+        <label><input type="radio" name="yu" value="uin"> μin/s</label>
+        <label><input type="radio" name="yu" value="dbv"> 速度 dB</label>
+        <label><input type="radio" name="yu" value="dba"> 加速度 dB</label>
+      </div>
+      <p class="note">速度：ref 2.54×10⁻⁸ m/s｜加速度：ref 10⁻⁶ m/s²</p>
+    </div>
+    <div class="panel"><h3>VC 曲線</h3>
+      <div class="cb-group" id="vc-cg">
+        <label><input type="checkbox" value="工廠 (ISO)"> 工廠</label>
+        <label><input type="checkbox" value="辦公室 (ISO)"> 辦公室</label>
+        <label><input type="checkbox" value="住宅 (ISO)"> 住宅</label>
+        <label><input type="checkbox" value="手術室 (ISO)" checked> 手術室</label>
         <label><input type="checkbox" value="VC-A" checked> VC-A</label>
         <label><input type="checkbox" value="VC-B" checked> VC-B</label>
         <label><input type="checkbox" value="VC-C" checked> VC-C</label>
@@ -83,280 +212,112 @@ tr:nth-child(even){background:#f7fafc}
         <label><input type="checkbox" value="VC-E" checked> VC-E</label>
       </div>
     </div>
-    <div class="panel">
-      <h3>自訂量測數據</h3>
-      <p class="note" style="margin-bottom:6px">輸入各頻段速度值（μm/s），逗號分隔，14 個值對應 4~80 Hz。</p>
-      <label>量測數據（μm/s）</label>
-      <textarea id="user-data" rows="3" placeholder="例: 45,38,30,25,22,20,18,16,14,12,10,9,8,7"></textarea>
-      <label>數據標籤</label>
-      <input type="text" id="user-label" value="量測數據">
-      <button class="btn" onclick="updateChart()" style="margin-top:8px">更新圖表</button>
+    <div class="panel"><h3>自訂量測數據</h3>
+      <p class="note" style="margin-bottom:4px">14 個速度值（μm/s），逗號分隔，4~80 Hz</p>
+      <textarea id="ud" rows="3" placeholder="45,38,30,25,22,20,18,16,14,12,10,9,8,7"></textarea>
+      <label>標籤</label><input type="text" id="ul" value="量測數據">
+      <button class="btn" onclick="vcDraw()" style="margin-top:6px">更新圖表</button>
+      <button class="btn btn-sm" onclick="expImg('vc-chart','VC曲線')" style="margin-top:4px">匯出圖表</button>
     </div>
-    <div class="panel">
-      <h3>VC 等級評定</h3>
-      <div id="grade-result" style="font-size:.85em;color:#555;min-height:28px">請輸入量測數據後點擊「更新圖表」</div>
+    <div class="panel"><h3>VC 等級評定</h3>
+      <div id="vc-gr" style="font-size:.82em;color:#555;min-height:24px">請輸入量測數據</div>
     </div>
   </div>
   <div class="main">
-    <div id="vc-chart"></div>
-    <div class="panel" style="margin-top:10px">
-      <h3>VC 曲線標準值參考表 <span class="badge">Ungar &amp; Gordon, 1991</span></h3>
-      <div class="table-wrap" id="ref-table"></div>
+    <div class="chart-box" id="vc-chart"></div>
+    <div class="panel" style="margin-top:8px"><h3>VC 曲線標準值 <span class="badge">Ungar &amp; Gordon, 1991</span></h3>
+      <div class="table-wrap" id="vc-ref"></div>
     </div>
   </div>
 </div>
 
-<!-- ═══════════ 環境振動分頁 ═══════════ -->
+<!-- ═══════ 環境振動 ═══════ -->
 <div id="tab-env" class="tab-content container">
   <div class="sidebar">
-    <div class="panel">
-      <h3>載入 CSV 數據</h3>
-      <p class="note" style="margin-bottom:8px">
-        支援由桌面版程式匯出的 CSV 統計表。<br>
-        或手動貼上逐時統計數據。
-      </p>
-      <input type="file" id="env-csv-file" accept=".csv" style="font-size:.8em">
-      <div id="env-file-info"></div>
+    <div class="panel"><h3>載入 CSV</h3>
+      <input type="file" id="env-csv" accept=".csv">
+      <div id="env-fi" style="font-size:.78em;color:#555;margin-top:4px"></div>
     </div>
-    <div class="panel">
-      <h3>手動輸入（逐時 dB 值）</h3>
-      <p class="note" style="margin-bottom:6px">每列：時段, Lveq, Lvmax, Lv5, Lv10, Lv50, Lv90, Lv95</p>
-      <textarea id="env-manual" rows="8" placeholder="10~11, 49.8, 69.9, 52.7, 51.4, 48.6, 47.6, 47.4
-11~12, 49.6, 68.9, 51.6, 50.5, 48.5, 47.7, 47.5"></textarea>
-      <button class="btn" onclick="parseManualEnv()" style="margin-top:8px">載入數據</button>
+    <div class="panel"><h3>手動輸入（逐時 dB）</h3>
+      <p class="note" style="margin-bottom:4px">每列：時段, Lveq, Lvmax, Lv5, Lv10, Lv50, Lv90, Lv95</p>
+      <textarea id="env-m" rows="5" placeholder="10~11, 49.8, 69.9, 52.7, 51.4, 48.6, 47.6, 47.4"></textarea>
+      <button class="btn" onclick="envManual()" style="margin-top:6px">載入</button>
     </div>
-    <div class="panel">
-      <h3>時段設定</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-        <div><label>早 開始</label><input type="number" id="p-am-s" value="5" min="0" max="23"></div>
-        <div><label>早 結束</label><input type="number" id="p-am-e" value="7" min="0" max="23"></div>
-        <div><label>日 開始</label><input type="number" id="p-day-s" value="7" min="0" max="23"></div>
-        <div><label>日 結束</label><input type="number" id="p-day-e" value="20" min="0" max="23"></div>
-        <div><label>晚 開始</label><input type="number" id="p-eve-s" value="20" min="0" max="23"></div>
-        <div><label>晚 結束</label><input type="number" id="p-eve-e" value="22" min="0" max="23"></div>
-        <div><label>夜 開始</label><input type="number" id="p-nit-s" value="22" min="0" max="23"></div>
-        <div><label>夜 結束</label><input type="number" id="p-nit-e" value="5" min="0" max="23"></div>
+    <div class="panel"><h3>時段設定</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+        <div><label>早 開始</label><input type="number" id="pa" value="5" min="0" max="23"></div>
+        <div><label>早 結束</label><input type="number" id="pb" value="7" min="0" max="23"></div>
+        <div><label>日 開始</label><input type="number" id="pc" value="7" min="0" max="23"></div>
+        <div><label>日 結束</label><input type="number" id="pd" value="20" min="0" max="23"></div>
+        <div><label>晚 開始</label><input type="number" id="pe" value="20" min="0" max="23"></div>
+        <div><label>晚 結束</label><input type="number" id="pf" value="22" min="0" max="23"></div>
+        <div><label>夜 開始</label><input type="number" id="pg" value="22" min="0" max="23"></div>
+        <div><label>夜 結束</label><input type="number" id="ph" value="5" min="0" max="23"></div>
       </div>
-      <button class="btn" onclick="renderEnvTable()" style="margin-top:8px;width:100%">更新摘要</button>
+      <button class="btn" onclick="envRender()" style="margin-top:6px;width:100%">更新摘要</button>
+      <button class="btn btn-sm" onclick="envExp()" style="margin-top:4px;width:100%">匯出 CSV</button>
     </div>
   </div>
-  <div class="main">
-    <div class="panel">
-      <h3>環境振動統計表</h3>
-      <div class="env-info" id="env-info">尚未載入數據</div>
-      <div class="table-wrap" id="env-table-wrap"></div>
-      <button class="btn" onclick="exportEnvCSV()" style="margin-top:10px">匯出 CSV</button>
-    </div>
-  </div>
+  <div class="main"><div class="panel"><h3>環境振動統計表</h3>
+    <div style="font-size:.8em;color:#2c5282;margin-bottom:6px" id="env-inf">尚未載入數據</div>
+    <div class="table-wrap" id="env-tw"></div>
+  </div></div>
 </div>
 
 <script>
-/* ═══════ 分頁切換 ═══════ */
-function switchTab(id) {
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
-  document.getElementById('tab-' + id).classList.add('active');
-  event.target.classList.add('active');
-}
+/* ═══ 通用 ═══ */
+function swTab(id){document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));document.querySelectorAll('#main-tabs button').forEach(b=>b.classList.remove('active'));document.getElementById('tab-'+id).classList.add('active');event.target.classList.add('active')}
+function sTab(b,id){const p=b.parentElement.parentElement;p.querySelectorAll('.stab').forEach(s=>s.classList.remove('active'));p.querySelectorAll('.stabs button').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active');b.classList.add('active')}
+function expImg(d,n){Plotly.downloadImage(d,{format:'png',width:1200,height:600,filename:n})}
+function expCSV(tid,n){const t=document.getElementById(tid);if(!t)return;let c="﻿";t.querySelectorAll('tr').forEach(r=>{const a=[];r.querySelectorAll('th,td').forEach(d=>a.push('"'+d.textContent.replace(/"/g,'""')+'"'));c+=a.join(',')+'\n'});const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv;charset=utf-8'}));a.download=n+'.csv';a.click()}
+function rdCSV(file,cb){const r=new FileReader();r.onload=e=>{const L=e.target.result.split('\n').map(l=>l.trim()).filter(l=>l);if(L.length<2)return;const h=L[0].split(/[,\t]+/).map(s=>s.trim().replace(/^"|"$/g,''));const rows=[];for(let i=1;i<L.length;i++){const v=L[i].split(/[,\t]+/).map(s=>s.trim().replace(/^"|"$/g,''));if(v.length>=h.length){const o={};h.forEach((k,j)=>o[k]=v[j]);rows.push(o)}}cb(h,rows,file.name)};r.readAsText(file,'utf-8')}
+function fm(v){v=parseFloat(v);if(isNaN(v))return'—';if(Math.abs(v)<1e-3&&v!==0)return v.toExponential(3);return v.toFixed(6).replace(/\.?0+$/,'')}
 
-/* ═══════ VC 曲線 ═══════ */
-const VC_FREQS = [4,5,6.3,8,10,12.5,16,20,25,31.5,40,50,63,80];
-const VC_CURVES = {
-  "工廠 (ISO)":   {flat:803.2,db:90,color:"#2a2a2a"},
-  "辦公室 (ISO)": {flat:402.6,db:84,color:"#484848"},
-  "住宅 (ISO)":   {flat:201.8,db:78,color:"#636363"},
-  "手術室 (ISO)": {flat:101.1,db:72,color:"#7d7d7d"},
-  "VC-A":         {flat:50.7, db:66,color:"#1a3f7a"},
-  "VC-B":         {flat:25.4, db:60,color:"#1b5e20"},
-  "VC-C":         {flat:12.7, db:54,color:"#b71c1c"},
-  "VC-D":         {flat:6.38, db:48,color:"#e65100"},
-  "VC-E":         {flat:3.20, db:42,color:"#6a1b9a"},
-};
-const VC_ORDER=["VC-E","VC-D","VC-C","VC-B","VC-A","手術室 (ISO)","住宅 (ISO)","辦公室 (ISO)","工廠 (ISO)"];
-const DB_REF=0.0254;
+/* ═══ 原始數據 ═══ */
+let RD=[],RH=[];
+document.getElementById('raw-csv').addEventListener('change',function(e){if(!e.target.files[0])return;rdCSV(e.target.files[0],(h,r,fn)=>{RH=h;RD=r;document.getElementById('raw-info').textContent=fn+' — '+r.length+' 筆';const tc=h.find(x=>x.includes('Time')||x.includes('時間'));if(tc&&r.length){document.getElementById('di-sd').textContent=(r[0][tc]||'').split(' ')[0]||'—';document.getElementById('di-st').textContent=(r[0][tc]||'').split(' ')[1]||'—';document.getElementById('di-ed').textContent=(r[r.length-1][tc]||'').split(' ')[0]||'—';document.getElementById('di-et').textContent=(r[r.length-1][tc]||'').split(' ')[1]||'—';if(r.length>=2){const d=(new Date(r[1][tc])-new Date(r[0][tc]))/1000;document.getElementById('di-samp').textContent=d.toFixed(1)+' 秒/筆'}}const fq=h.filter(x=>x.match(/Hz/));if(fq.length){document.getElementById('di-fl').textContent=fq[0].replace(/^[XYZ]_/,'');document.getElementById('di-fh').textContent=fq[fq.length-1].replace(/^[XYZ]_/,'')}document.getElementById('di-fi').textContent=fn+' — '+r.length+'筆 × '+h.length+'欄';drawRaw()})});
+function drawRaw(){if(!RD.length){document.getElementById('raw-wrap').innerHTML='<p class="note">無數據</p>';return}const mx=Math.min(RD.length,500);let h='<table id="raw-tbl"><tr>';RH.forEach(c=>h+='<th>'+c+'</th>');h+='</tr>';for(let i=0;i<mx;i++){h+='<tr>';RH.forEach(c=>h+='<td>'+(RD[i][c]||'')+'</td>');h+='</tr>'}h+='</table>';document.getElementById('raw-wrap').innerHTML=h;if(RD.length>500)document.getElementById('raw-info').textContent+=' (前500筆)';const bb=RH.filter(c=>c.includes('寬頻'));if(bb.length){let s='<table><tr><th>欄位</th><th>L5</th><th>L10</th><th>L50</th><th>L90</th><th>L95</th><th>Lmax</th></tr>';bb.forEach(c=>{const v=RD.map(r=>parseFloat(r[c])).filter(x=>isFinite(x)&&x>0).sort((a,b)=>a-b);if(!v.length)return;const p=q=>{const i=(1-q/100)*(v.length-1),lo=Math.floor(i);return lo>=v.length-1?v[v.length-1]:v[lo]+(i-lo)*(v[lo+1]-v[lo])};s+='<tr><td>'+c+'</td><td>'+fm(p(5))+'</td><td>'+fm(p(10))+'</td><td>'+fm(p(50))+'</td><td>'+fm(p(90))+'</td><td>'+fm(p(95))+'</td><td>'+fm(Math.max(...v))+'</td></tr>'});s+='</table>';document.getElementById('raw-stat').innerHTML=s}}
 
-function vcVal(flat,f){if(f>=8)return flat;const s=Math.round(Math.log2(8/f)*3);return flat*Math.pow(10,s*2/20)}
-function vcVals(flat){return VC_FREQS.map(f=>vcVal(flat,f))}
-function disp(v,f){
-  if(v<=0||!isFinite(v))return NaN;
-  const u=document.querySelector('input[name="yunit"]:checked').value;
-  if(u==="uin_s")return v/0.0254;
-  if(u==="dB_vel")return 20*Math.log10(v/DB_REF);
-  if(u==="dB_acc")return 20*Math.log10(v*2*Math.PI*f);
-  return v;
-}
-function yLabel(){
-  const u=document.querySelector('input[name="yunit"]:checked').value;
-  return{um_s:"rms Velocity, μm/s",uin_s:"rms Velocity, μin/s",dB_vel:"Velocity Level, dB re 2.54×10⁻⁸ m/s",dB_acc:"Acceleration Level, dB re 10⁻⁶ m/s²"}[u]||"";
-}
-function isDb(){const u=document.querySelector('input[name="yunit"]:checked').value;return u==="dB_vel"||u==="dB_acc"}
-function vcGrade(bv){for(const n of VC_ORDER){const fl=VC_CURVES[n].flat;if(bv.every(([f,v])=>v<=vcVal(fl,f)))return n}return"超過工廠 (ISO)"}
+/* ═══ 時間序列 ═══ */
+let TD=[],TH=[];
+document.getElementById('time-csv').addEventListener('change',function(e){if(!e.target.files[0])return;rdCSV(e.target.files[0],(h,r)=>{TH=h;TD=r;plotTS()})});
+function plotTS(){if(!TD.length){Plotly.react('time-chart',[],{title:'尚未載入'});return}const tc=TH.find(h=>h.includes('Time')||h.includes('時間'));const tr=[];const cl={X:'royalblue',Y:'forestgreen',Z:'crimson'};['X','Y','Z'].forEach(a=>{if(!document.getElementById('ts-'+a.toLowerCase()).checked)return;const c=TH.find(h=>h.startsWith(a)&&h.includes('寬頻'));if(!c)return;tr.push({x:TD.map(r=>r[tc]),y:TD.map(r=>parseFloat(r[c])),mode:'lines',name:a+' 軸',line:{color:cl[a],width:1}})});Plotly.react('time-chart',tr,{title:'寬頻振動時間序列',xaxis:{title:'時間'},yaxis:{title:'振動量'},margin:{l:60,r:20,t:40,b:50},showlegend:true},{responsive:true})}
 
-function updateChart(){
-  const traces=[];
-  document.querySelectorAll('#vc-curves-group input:checked').forEach(cb=>{
-    const n=cb.value,info=VC_CURVES[n],vals=vcVals(info.flat);
-    traces.push({x:VC_FREQS,y:vals.map((v,i)=>disp(v,VC_FREQS[i])),mode:"lines",name:n,line:{color:info.color,width:2},hovertemplate:`${n}<br>%{x} Hz: %{y:.2f}<extra></extra>`});
-  });
-  const ds=document.getElementById("user-data").value.trim(),ul=document.getElementById("user-label").value||"量測數據";
-  let gh="";
-  if(ds){
-    const vals=ds.split(/[,，\s]+/).map(Number).filter(v=>!isNaN(v)&&v>0);
-    if(vals.length===14){
-      traces.push({x:VC_FREQS,y:vals.map((v,i)=>disp(v,VC_FREQS[i])),mode:"lines+markers",name:ul,line:{color:"#e53e3e",width:2.5},marker:{size:5}});
-      const g=vcGrade(VC_FREQS.map((f,i)=>[f,vals[i]])),pk=Math.max(...vals),pf=VC_FREQS[vals.indexOf(pk)];
-      gh=`<strong>評定結果：${g}</strong><br>峰值：${pk.toFixed(2)} μm/s @ ${pf} Hz`;
-    }else gh=`<span style="color:#c53030">需要 14 個數值（目前 ${vals.length} 個）</span>`;
-  }
-  document.getElementById("grade-result").innerHTML=gh||"請輸入量測數據後點擊「更新圖表」";
-  const db=isDb();
-  const layout={title:{text:"Generic Vibration Criterion (VC) Curves — Ungar & Gordon (1991)",font:{size:14}},
-    xaxis:{title:"1/3 Octave Band Center Frequency, Hz",type:"log",range:[Math.log10(3.5),Math.log10(90)],tickvals:VC_FREQS,ticktext:VC_FREQS.map(String),gridcolor:"#e2e8f0"},
-    yaxis:{title:yLabel(),type:db?"linear":"log",gridcolor:"#e2e8f0"},
-    showlegend:true,legend:{x:.01,y:.99,bgcolor:"rgba(255,255,255,.85)",font:{size:11}},
-    margin:{l:70,r:30,t:50,b:60},plot_bgcolor:"white",paper_bgcolor:"white",hovermode:"x unified"};
-  if(db){const u=document.querySelector('input[name="yunit"]:checked').value;layout.yaxis.range=u==="dB_acc"?[20,140]:[20,120]}
-  Plotly.react("vc-chart",traces,layout,{responsive:true});
-}
+/* ═══ 頻率分析 ═══ */
+let FD=[],FH=[];
+document.getElementById('freq-csv').addEventListener('change',function(e){if(!e.target.files[0])return;rdCSV(e.target.files[0],(h,r)=>{FH=h;FD=r;plotFQ()})});
+function plotFQ(){if(!FD.length){Plotly.react('freq-chart',[],{title:'尚未載入'});return}const st=document.querySelector('input[name="fqs"]:checked').value;const cl={X:'royalblue',Y:'forestgreen',Z:'crimson',XYZ:'darkorchid'};const tr=[];['X','Y','Z','XYZ'].forEach(a=>{if(!document.getElementById('fq-'+a.toLowerCase()).checked)return;const rows=FD.filter(r=>(r['軸別']||'').includes(a));const bands=rows.filter(r=>r['頻段']!=='Broadband').map(r=>r['頻段']);const vals=rows.filter(r=>r['頻段']!=='Broadband').map(r=>parseFloat(r[st]));if(bands.length)tr.push({x:bands,y:vals,type:'bar',name:a==='XYZ'?'XYZ合成':a+'軸',marker:{color:cl[a],opacity:.78}})});Plotly.react('freq-chart',tr,{title:'各頻段 '+st+' 比較',xaxis:{title:'1/3 八度音頻段',tickangle:45},yaxis:{title:st},barmode:'group',margin:{l:60,r:20,t:40,b:80}},{responsive:true})}
 
-function buildRefTable(){
-  const u=document.querySelector('input[name="yunit"]:checked').value;
-  let ul,cv;
-  switch(u){
-    case"uin_s":ul="μin/s";cv=(v,f)=>(v/0.0254).toFixed(0);break;
-    case"dB_vel":ul="dB";cv=(v,f)=>(20*Math.log10(v/DB_REF)).toFixed(0);break;
-    case"dB_acc":ul="dB";cv=(v,f)=>(20*Math.log10(v*2*Math.PI*f)).toFixed(1);break;
-    default:ul="μm/s";cv=(v,f)=>v<10?v.toFixed(2):v<100?v.toFixed(1):v.toFixed(0);
-  }
-  let h="<table><tr><th>場所</th><th>單位</th>";
-  VC_FREQS.forEach(f=>h+=`<th>${f} Hz</th>`);h+="</tr>";
-  for(const[n,info]of Object.entries(VC_CURVES)){const vals=vcVals(info.flat);h+=`<tr><td style="text-align:left;font-weight:600">${n}</td><td>${ul}</td>`;vals.forEach((v,i)=>h+=`<td>${cv(v,VC_FREQS[i])}</td>`);h+="</tr>"}
-  h+="</table>";document.getElementById("ref-table").innerHTML=h;
-}
-document.querySelectorAll('input[name="yunit"]').forEach(r=>r.addEventListener("change",()=>{updateChart();buildRefTable()}));
-document.querySelectorAll('#vc-curves-group input').forEach(cb=>cb.addEventListener("change",updateChart));
-updateChart();buildRefTable();
+/* ═══ 統計表 ═══ */
+let SD=[],SH=[];
+document.getElementById('stats-csv').addEventListener('change',function(e){if(!e.target.files[0])return;rdCSV(e.target.files[0],(h,r)=>{SH=h;SD=r;showStats()})});
+function showStats(){if(!SD.length){document.getElementById('st-wrap').innerHTML='<p class="note">無數據</p>';return}const af=document.querySelector('input[name="sa"]:checked').value;let r=SD;if(af!=='全部')r=r.filter(x=>(x['軸別']||'').includes(af));let h='<table id="st-tbl"><tr>';SH.forEach(c=>h+='<th>'+c+'</th>');h+='</tr>';r.forEach(x=>{const bb=(x['頻段']||'').includes('Broadband');h+='<tr'+(bb?' class="stat-row"':'')+'>';SH.forEach(c=>h+='<td>'+(x[c]||'')+'</td>');h+='</tr>'});h+='</table>';document.getElementById('st-wrap').innerHTML=h}
 
-/* ═══════ 環境振動 ═══════ */
-let envData = []; // [{hour, label, Lveq, Lvmax, Lv5, Lv10, Lv50, Lv90, Lv95}]
+/* ═══ VC 曲線 ═══ */
+const VF=[4,5,6.3,8,10,12.5,16,20,25,31.5,40,50,63,80];
+const VC={"工廠 (ISO)":{f:803.2,c:"#2a2a2a"},"辦公室 (ISO)":{f:402.6,c:"#484848"},"住宅 (ISO)":{f:201.8,c:"#636363"},"手術室 (ISO)":{f:101.1,c:"#7d7d7d"},"VC-A":{f:50.7,c:"#1a3f7a"},"VC-B":{f:25.4,c:"#1b5e20"},"VC-C":{f:12.7,c:"#b71c1c"},"VC-D":{f:6.38,c:"#e65100"},"VC-E":{f:3.20,c:"#6a1b9a"}};
+const VO=["VC-E","VC-D","VC-C","VC-B","VC-A","手術室 (ISO)","住宅 (ISO)","辦公室 (ISO)","工廠 (ISO)"];
+const DR=0.0254;
+function vv(fl,f){if(f>=8)return fl;return fl*Math.pow(10,Math.round(Math.log2(8/f)*3)*2/20)}
+function vd(v,f){if(v<=0||!isFinite(v))return NaN;const u=document.querySelector('input[name="yu"]:checked').value;if(u==="uin")return v/0.0254;if(u==="dbv")return 20*Math.log10(v/DR);if(u==="dba")return 20*Math.log10(v*2*Math.PI*f);return v}
+function vg(bv){for(const n of VO)if(bv.every(([f,v])=>v<=vv(VC[n].f,f)))return n;return"超過工廠 (ISO)"}
+function vcDraw(){const tr=[];document.querySelectorAll('#vc-cg input:checked').forEach(cb=>{const n=cb.value,i=VC[n],vs=VF.map(f=>vv(i.f,f));tr.push({x:VF,y:vs.map((v,j)=>vd(v,VF[j])),mode:"lines",name:n,line:{color:i.c,width:2}})});const ds=document.getElementById("ud").value.trim();let gh="";if(ds){const vs=ds.split(/[,，\s]+/).map(Number).filter(v=>!isNaN(v)&&v>0);if(vs.length===14){tr.push({x:VF,y:vs.map((v,i)=>vd(v,VF[i])),mode:"lines+markers",name:document.getElementById("ul").value||"量測",line:{color:"#e53e3e",width:2.5},marker:{size:5}});const g=vg(VF.map((f,i)=>[f,vs[i]])),pk=Math.max(...vs);gh=`<strong>評定：${g}</strong><br>峰值：${pk.toFixed(2)} μm/s`}else gh=`<span style="color:#c53030">需14值（現${vs.length}個）</span>`}
+document.getElementById("vc-gr").innerHTML=gh||"請輸入量測數據";const u=document.querySelector('input[name="yu"]:checked').value;const db=u==="dbv"||u==="dba";const yl={um:"rms Velocity, μm/s",uin:"rms Velocity, μin/s",dbv:"Velocity Level, dB re 2.54×10⁻⁸ m/s",dba:"Acceleration Level, dB re 10⁻⁶ m/s²"}[u]||"";
+Plotly.react("vc-chart",tr,{title:{text:"Generic Vibration Criterion (VC) Curves — Ungar & Gordon (1991)",font:{size:13}},xaxis:{title:"1/3 Octave Band Center Frequency, Hz",type:"log",range:[Math.log10(3.5),Math.log10(90)],tickvals:VF,ticktext:VF.map(String),gridcolor:"#e2e8f0"},yaxis:{title:yl,type:db?"linear":"log",gridcolor:"#e2e8f0",range:db?(u==="dba"?[20,140]:[20,120]):undefined},showlegend:true,legend:{x:.01,y:.99,bgcolor:"rgba(255,255,255,.85)",font:{size:10}},margin:{l:65,r:25,t:45,b:55},plot_bgcolor:"white",paper_bgcolor:"white",hovermode:"x unified"},{responsive:true})}
+function vcRef(){const u=document.querySelector('input[name="yu"]:checked').value;let ul,cv;switch(u){case"uin":ul="μin/s";cv=(v,f)=>(v/0.0254).toFixed(0);break;case"dbv":ul="dB";cv=(v,f)=>(20*Math.log10(v/DR)).toFixed(0);break;case"dba":ul="dB";cv=(v,f)=>(20*Math.log10(v*2*Math.PI*f)).toFixed(1);break;default:ul="μm/s";cv=(v)=>v<10?v.toFixed(2):v<100?v.toFixed(1):v.toFixed(0)}let h="<table><tr><th>場所</th><th>單位</th>";VF.forEach(f=>h+="<th>"+f+"</th>");h+="</tr>";for(const[n,i]of Object.entries(VC)){const vs=VF.map(f=>vv(i.f,f));h+='<tr><td style="text-align:left;font-weight:600">'+n+"</td><td>"+ul+"</td>";vs.forEach((v,j)=>h+="<td>"+cv(v,VF[j])+"</td>");h+="</tr>"}h+="</table>";document.getElementById("vc-ref").innerHTML=h}
+document.querySelectorAll('input[name="yu"]').forEach(r=>r.addEventListener("change",()=>{vcDraw();vcRef()}));
+document.querySelectorAll('#vc-cg input').forEach(cb=>cb.addEventListener("change",vcDraw));
+vcDraw();vcRef();
 
-function calcStats(arr) {
-  const v = arr.filter(x => isFinite(x) && x > 0).sort((a,b) => a-b);
-  if (!v.length) return {Leq:NaN,Lmax:NaN,L5:NaN,L10:NaN,L50:NaN,L90:NaN,L95:NaN};
-  const rms = Math.sqrt(v.reduce((s,x)=>s+x*x,0)/v.length);
-  const pct = (p) => { const i=(1-p/100)*(v.length-1); const lo=Math.floor(i); return lo>=v.length-1?v[v.length-1]:v[lo]+(i-lo)*(v[lo+1]-v[lo]); };
-  return {Leq:rms, Lmax:Math.max(...v), L5:pct(5), L10:pct(10), L50:pct(50), L90:pct(90), L95:pct(95)};
-}
-
-function parseManualEnv() {
-  const txt = document.getElementById("env-manual").value.trim();
-  if (!txt) return;
-  envData = [];
-  txt.split('\n').forEach(line => {
-    const parts = line.split(/[,，\t]+/).map(s => s.trim());
-    if (parts.length < 8) return;
-    const label = parts[0];
-    const m = label.match(/(\d+)/);
-    const hour = m ? parseInt(m[1]) : envData.length;
-    envData.push({
-      hour, label,
-      Lveq: parseFloat(parts[1]), Lvmax: parseFloat(parts[2]),
-      Lv5: parseFloat(parts[3]), Lv10: parseFloat(parts[4]),
-      Lv50: parseFloat(parts[5]), Lv90: parseFloat(parts[6]),
-      Lv95: parseFloat(parts[7])
-    });
-  });
-  document.getElementById("env-info").textContent = `已載入 ${envData.length} 筆逐時數據`;
-  renderEnvTable();
-}
-
-document.getElementById("env-csv-file").addEventListener("change", function(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(ev) {
-    const lines = ev.target.result.split('\n').map(l => l.trim()).filter(l => l);
-    if (lines.length < 2) return;
-    envData = [];
-    for (let i = 1; i < lines.length; i++) {
-      const parts = lines[i].split(/[,，\t]+/).map(s => s.trim().replace(/^"|"$/g, ''));
-      if (parts.length < 8) continue;
-      const label = parts[0];
-      if (!label || label === '時間') continue;
-      const m = label.match(/(\d+)/);
-      const hour = m ? parseInt(m[1]) : i - 1;
-      envData.push({
-        hour, label,
-        Lveq: parseFloat(parts[1]), Lvmax: parseFloat(parts[2]),
-        Lv5: parseFloat(parts[3]), Lv10: parseFloat(parts[4]),
-        Lv50: parseFloat(parts[5]), Lv90: parseFloat(parts[6]),
-        Lv95: parseFloat(parts[7])
-      });
-    }
-    document.getElementById("env-file-info").textContent = `${file.name} — ${envData.length} 筆`;
-    document.getElementById("env-info").textContent = `已載入 ${envData.length} 筆逐時數據（${file.name}）`;
-    renderEnvTable();
-  };
-  reader.readAsText(file, 'utf-8');
-});
-
-function renderEnvTable() {
-  if (!envData.length) { document.getElementById("env-table-wrap").innerHTML = "<p style='color:#999'>尚未載入數據</p>"; return; }
-  const fmt = v => (isNaN(v) || !isFinite(v)) ? "—" : v.toFixed(1);
-  let h = '<table class="env-table"><tr><th>時間</th><th>Lveq</th><th>Lvmax</th><th>Lv5</th><th>Lv10</th><th>Lv50</th><th>Lv90</th><th>Lv95</th></tr>';
-  envData.forEach((d, i) => {
-    if (d.label === '' || d.label === '監測成果') return;
-    h += `<tr class="${i%2===0?'odd':'even'}"><td>${d.label}</td><td>${fmt(d.Lveq)}</td><td>${fmt(d.Lvmax)}</td><td>${fmt(d.Lv5)}</td><td>${fmt(d.Lv10)}</td><td>${fmt(d.Lv50)}</td><td>${fmt(d.Lv90)}</td><td>${fmt(d.Lv95)}</td></tr>`;
-  });
-
-  // 時段摘要
-  const ps = parseInt(document.getElementById("p-am-s").value);
-  const pe = parseInt(document.getElementById("p-am-e").value);
-  const ds = parseInt(document.getElementById("p-day-s").value);
-  const de = parseInt(document.getElementById("p-day-e").value);
-  const es = parseInt(document.getElementById("p-eve-s").value);
-  const ee = parseInt(document.getElementById("p-eve-e").value);
-  const ns = parseInt(document.getElementById("p-nit-s").value);
-  const ne = parseInt(document.getElementById("p-nit-e").value);
-  const periods = [
-    [`L早(${String(ps).padStart(2,'0')}~${String(pe).padStart(2,'0')})`, ps, pe],
-    [`L日(${String(ds).padStart(2,'0')}~${String(de).padStart(2,'0')})`, ds, de],
-    [`L晚(${String(es).padStart(2,'0')}~${String(ee).padStart(2,'0')})`, es, ee],
-    [`L夜(${String(ns).padStart(2,'0')}~${String(ne).padStart(2,'0')})`, ns, ne],
-  ];
-  function inRange(hour, s, e) {
-    return s < e ? (hour >= s && hour < e) : (hour >= s || hour < e);
-  }
-  h += '<tr class="sep"><td colspan="8"></td></tr>';
-  h += '<tr class="sum-hdr"><td>監測成果</td><td></td><td></td><td>Lv5</td><td>Lv10</td><td></td><td></td><td>Lvmax</td></tr>';
-  periods.forEach(([label, hs, he]) => {
-    const subset = envData.filter(d => inRange(d.hour, hs, he));
-    if (!subset.length) { h += `<tr class="sum"><td>${label}</td><td></td><td></td><td>—</td><td>—</td><td></td><td></td><td>—</td></tr>`; return; }
-    const lv5vals = subset.map(d => d.Lv5).filter(isFinite);
-    const lv10vals = subset.map(d => d.Lv10).filter(isFinite);
-    const lmaxvals = subset.map(d => d.Lvmax).filter(isFinite);
-    const maxOf = a => a.length ? Math.max(...a) : NaN;
-    h += `<tr class="sum"><td>${label}</td><td></td><td></td><td>${fmt(maxOf(lv5vals))}</td><td>${fmt(maxOf(lv10vals))}</td><td></td><td></td><td>${fmt(maxOf(lmaxvals))}</td></tr>`;
-  });
-  h += '</table>';
-  document.getElementById("env-table-wrap").innerHTML = h;
-}
-
-function exportEnvCSV() {
-  if (!envData.length) { alert("尚未載入數據"); return; }
-  let csv = "﻿時間,Lveq,Lvmax,Lv5,Lv10,Lv50,Lv90,Lv95\n";
-  const fmt = v => (isNaN(v)||!isFinite(v)) ? "" : v.toFixed(1);
-  envData.forEach(d => {
-    csv += `${d.label},${fmt(d.Lveq)},${fmt(d.Lvmax)},${fmt(d.Lv5)},${fmt(d.Lv10)},${fmt(d.Lv50)},${fmt(d.Lv90)},${fmt(d.Lv95)}\n`;
-  });
-  const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "環境振動統計.csv";
-  a.click();
-}
-
-renderEnvTable();
+/* ═══ 環境振動 ═══ */
+let ED=[];
+function envManual(){const t=document.getElementById("env-m").value.trim();if(!t)return;ED=[];t.split('\n').forEach(l=>{const p=l.split(/[,，\t]+/).map(s=>s.trim());if(p.length<8)return;const m=p[0].match(/(\d+)/);ED.push({h:m?parseInt(m[1]):ED.length,lb:p[0],eq:parseFloat(p[1]),mx:parseFloat(p[2]),l5:parseFloat(p[3]),l10:parseFloat(p[4]),l50:parseFloat(p[5]),l90:parseFloat(p[6]),l95:parseFloat(p[7])})});document.getElementById("env-inf").textContent="已載入 "+ED.length+" 筆";envRender()}
+document.getElementById("env-csv").addEventListener("change",function(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=function(ev){const L=ev.target.result.split('\n').map(l=>l.trim()).filter(l=>l);if(L.length<2)return;ED=[];for(let i=1;i<L.length;i++){const p=L[i].split(/[,，\t]+/).map(s=>s.trim().replace(/^"|"$/g,''));if(p.length<8||!p[0]||p[0]==='時間')continue;const m=p[0].match(/(\d+)/);ED.push({h:m?parseInt(m[1]):i-1,lb:p[0],eq:parseFloat(p[1]),mx:parseFloat(p[2]),l5:parseFloat(p[3]),l10:parseFloat(p[4]),l50:parseFloat(p[5]),l90:parseFloat(p[6]),l95:parseFloat(p[7])})}document.getElementById("env-fi").textContent=f.name+" — "+ED.length+"筆";document.getElementById("env-inf").textContent="已載入 "+ED.length+" 筆（"+f.name+"）";envRender()};r.readAsText(f,'utf-8')});
+function envRender(){if(!ED.length){document.getElementById("env-tw").innerHTML="<p class='note'>尚未載入</p>";return}const F=v=>(isNaN(v)||!isFinite(v))?"—":v.toFixed(1);let h='<table class="env-table"><tr><th>時間</th><th>Lveq</th><th>Lvmax</th><th>Lv5</th><th>Lv10</th><th>Lv50</th><th>Lv90</th><th>Lv95</th></tr>';ED.forEach((d,i)=>{if(d.lb===''||d.lb==='監測成果')return;h+='<tr class="'+(i%2===0?'odd':'even')+'"><td>'+d.lb+'</td><td>'+F(d.eq)+'</td><td>'+F(d.mx)+'</td><td>'+F(d.l5)+'</td><td>'+F(d.l10)+'</td><td>'+F(d.l50)+'</td><td>'+F(d.l90)+'</td><td>'+F(d.l95)+'</td></tr>'});
+const gv=id=>parseInt(document.getElementById(id).value);const pp=[[`L早(${String(gv('pa')).padStart(2,'0')}~${String(gv('pb')).padStart(2,'0')})`,gv('pa'),gv('pb')],[`L日(${String(gv('pc')).padStart(2,'0')}~${String(gv('pd')).padStart(2,'0')})`,gv('pc'),gv('pd')],[`L晚(${String(gv('pe')).padStart(2,'0')}~${String(gv('pf')).padStart(2,'0')})`,gv('pe'),gv('pf')],[`L夜(${String(gv('pg')).padStart(2,'0')}~${String(gv('ph')).padStart(2,'0')})`,gv('pg'),gv('ph')]];
+function inR(hr,s,e){return s<e?(hr>=s&&hr<e):(hr>=s||hr<e)}h+='<tr class="sep"><td colspan="8"></td></tr><tr class="sum-hdr"><td>監測成果</td><td></td><td></td><td>Lv5</td><td>Lv10</td><td></td><td></td><td>Lvmax</td></tr>';pp.forEach(([lb,s,e])=>{const sub=ED.filter(d=>inR(d.h,s,e));if(!sub.length){h+='<tr class="sum"><td>'+lb+'</td><td></td><td></td><td>—</td><td>—</td><td></td><td></td><td>—</td></tr>';return}const mx=a=>{const v=a.filter(isFinite);return v.length?Math.max(...v):NaN};h+='<tr class="sum"><td>'+lb+'</td><td></td><td></td><td>'+F(mx(sub.map(d=>d.l5)))+'</td><td>'+F(mx(sub.map(d=>d.l10)))+'</td><td></td><td></td><td>'+F(mx(sub.map(d=>d.mx)))+'</td></tr>'});h+='</table>';document.getElementById("env-tw").innerHTML=h}
+function envExp(){if(!ED.length){alert("尚未載入");return}let c="﻿時間,Lveq,Lvmax,Lv5,Lv10,Lv50,Lv90,Lv95\n";const F=v=>(isNaN(v)||!isFinite(v))?"":v.toFixed(1);ED.forEach(d=>{c+=d.lb+','+F(d.eq)+','+F(d.mx)+','+F(d.l5)+','+F(d.l10)+','+F(d.l50)+','+F(d.l90)+','+F(d.l95)+'\n'});const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([c],{type:"text/csv;charset=utf-8"}));a.download="環境振動.csv";a.click()}
+envRender();
 </script>
 </body>
 </html>

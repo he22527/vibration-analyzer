@@ -54,14 +54,25 @@ INTERVAL_LABELS = [l for l,_,_ in INTERVAL_OPTIONS]
 # (category, label, SI 說明, 線性換算係數 from base, dB 基準值)
 # base: m/s²（加速度）或 m/s（速度，需先做 v=a/2πf）
 UNIT_DEFS: dict[str, tuple] = {
-    "m/s²":   ("acc","m/s²",  "SI 加速度基本單位",                       1.0,       None),
-    "g":      ("acc","g",     "重力加速度  1 g = 9.80665 m/s²",          1/9.80665, None),
-    "Gal":    ("acc","Gal",   "公制  1 Gal = 0.01 m/s² = 1 cm/s²",       100.0,     None),
-    "dB_acc": ("acc","dB",    "加速度級  ISO 1683  基準 a₀ = 10⁻⁶ m/s²", 1.0,       1e-6),
-    "m/s":    ("vel","m/s",   "SI 速度基本單位",                          1.0,       None),
-    "mm/s":   ("vel","mm/s",  "公制  1 m/s = 1000 mm/s",                  1000.0,    None),
-    "ips":    ("vel","ips",   "英制  1 m/s ≈ 39.3701 in/s",              39.3701,   None),
-    "dB_vel": ("vel","dB",    "速度級  基準 v₀ = 2.54×10⁻⁸ m/s", 1.0, 2.54e-8),
+    "m/s²":      ("acc","m/s²",  "SI 加速度基本單位",                       1.0,       None),
+    "g":         ("acc","g",     "重力加速度  1 g = 9.80665 m/s²",          1/9.80665, None),
+    "Gal":       ("acc","Gal",   "公制  1 Gal = 0.01 m/s² = 1 cm/s²",       100.0,     None),
+    "dB_acc":    ("acc","dB",    "加速度級  基準 a₀ = 10⁻⁶ m/s²",          1.0,       1e-6),
+    "dB_acc5":   ("acc","dB",    "加速度級  基準 a₀ = 10⁻⁵ m/s²",          1.0,       1e-5),
+    "dB_acc_Wm": ("acc","dB(Wm)","加速度級  頻率 Wm 加權",                  1.0,       1e-6),
+    "m/s":       ("vel","m/s",   "SI 速度基本單位",                          1.0,       None),
+    "mm/s":      ("vel","mm/s",  "公制  1 m/s = 1000 mm/s",                  1000.0,    None),
+    "ips":       ("vel","ips",   "英制  1 m/s ≈ 39.3701 in/s",              39.3701,   None),
+    "dB_vel":    ("vel","dB",    "速度級  基準 v₀ = 2.54×10⁻⁸ m/s",         1.0,       2.54e-8),
+}
+
+# ISO 2631-2 Wm 加權因子（1/3 八音度中心頻率 → 加權值）
+WM_WEIGHTS: dict[float, float] = {
+    1: 0.50, 1.25: 0.559, 1.6: 0.631, 2: 0.707, 2.5: 0.794,
+    3.15: 0.891, 4: 1.0, 5: 1.0, 6.3: 1.0, 8: 1.0,
+    10: 0.80, 12.5: 0.64, 16: 0.50, 20: 0.40, 25: 0.315,
+    31.5: 0.25, 40: 0.20, 50: 0.16, 63: 0.125, 80: 0.10,
+    100: 0.08, 125: 0.063, 160: 0.05, 200: 0.04, 250: 0.0315, 315: 0.025,
 }
 
 # ── Ungar & Gordon（1991）VC 曲線 ──────────────────────────
@@ -221,6 +232,7 @@ class VibrationApp:
         self._raw_page                = 0
         self._raw_total_pages         = 0
         self._raw_display_df: pd.DataFrame | None = None
+        self._rnd_file_times: list[tuple] = []   # [(file, t_min, t_max), ...]
 
         self._build_ui()
         self._poll_queue()
@@ -239,11 +251,12 @@ class VibrationApp:
         self._build_controls(left)
         self._build_results(right)
 
-    # ─────────────── 左側控制面板 ────────────────────────
+    # ─────────────── 左側控制面板（雙分頁）────────────────
 
     def _build_controls(self, parent):
         pad = dict(padx=6, pady=3)
-        # 量測數據
+
+        # 量測數據（目錄）- 固定在最上方
         g = ttk.LabelFrame(parent, text="量測數據", padding=5)
         g.pack(fill=tk.X, **pad)
         self.var_dir = tk.StringVar(value=DEFAULT_ROOT)
@@ -251,55 +264,19 @@ class VibrationApp:
         ttk.Button(g, text="瀏覽...", command=self._browse_dir).pack(
             anchor=tk.E, pady=(2,0))
 
-        # 日期 / 時間範圍
-        g = ttk.LabelFrame(parent, text="日期 / 時間範圍", padding=5)
-        g.pack(fill=tk.X, **pad)
-        for lbl, attr, val in [
-            ("開始日期:","var_start_date","2026/04/16"),
-            ("開始時間:","var_start_time","00:00:00.0"),
-            ("結束日期:","var_end_date",  "2026/04/23"),
-            ("結束時間:","var_end_time",  "23:59:59.9"),
-        ]:
-            row = ttk.Frame(g); row.pack(fill=tk.X, pady=1)
-            ttk.Label(row, text=lbl, width=9).pack(side=tk.LEFT)
-            var = tk.StringVar(value=val); setattr(self, attr, var)
-            ttk.Entry(row, textvariable=var, width=16).pack(side=tk.RIGHT)
-        ttk.Label(g, text="格式  YYYY/MM/DD  HH:MM:SS.f",
-                  font=("",7), foreground="gray").pack(anchor=tk.W)
+        # ═══ 雙分頁 Notebook ═══
+        self._ctrl_nb = ttk.Notebook(parent)
+        self._ctrl_nb.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
-        # 頻率範圍
-        g = ttk.LabelFrame(parent, text="頻率範圍", padding=5)
-        g.pack(fill=tk.X, **pad)
-        for lbl, attr, val in [("最低頻率:","var_freq_low","1 Hz"),
-                                ("最高頻率:","var_freq_high","100 Hz")]:
-            row = ttk.Frame(g); row.pack(fill=tk.X, pady=1)
-            ttk.Label(row, text=lbl, width=9).pack(side=tk.LEFT)
-            var = tk.StringVar(value=val); setattr(self, attr, var)
-            ttk.Combobox(row, textvariable=var, values=FREQ_NAMES,
-                         width=10, state="readonly").pack(side=tk.RIGHT)
-        # 目前選擇的物理量單位（動態更新）
-        self.var_unit_hint = tk.StringVar(value="物理量: m/s²（SI 加速度基本單位）")
-        ttk.Label(g, textvariable=self.var_unit_hint,
-                  font=("",7), foreground="#2c5282",
-                  wraplength=295).pack(anchor=tk.W, pady=(3,0))
+        tab_input = ttk.Frame(self._ctrl_nb)
+        tab_analysis = ttk.Frame(self._ctrl_nb)
+        self._ctrl_nb.add(tab_input, text=" 資料輸入 ")
+        self._ctrl_nb.add(tab_analysis, text=" 數據分析 ")
 
-        # 振動量單位（Tree-view 單位選擇器）
-        g = ttk.LabelFrame(parent, text="振動量單位", padding=5)
-        g.pack(fill=tk.X, **pad)
-        self._build_unit_tree(g)
+        self._build_tab_input(tab_input)
+        self._build_tab_analysis(tab_analysis)
 
-        # 分析間距
-        g = ttk.LabelFrame(parent, text="分析間距", padding=5)
-        g.pack(fill=tk.X, **pad)
-        self.var_interval = tk.StringVar(value="原始 (0.1s)")
-        cols_f = ttk.Frame(g); cols_f.pack(fill=tk.X)
-        for lbl, _, _ in INTERVAL_OPTIONS:
-            ttk.Radiobutton(cols_f, text=lbl, variable=self.var_interval,
-                            value=lbl).pack(anchor=tk.W, pady=1)
-        ttk.Label(g, text="原始資料 0.1s/筆；間距決定 RMS 聚合粒度",
-                  font=("",7), foreground="gray").pack(anchor=tk.W)
-
-        # 分析按鈕
+        # 分析按鈕 - 固定在最下方
         ttk.Separator(parent, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=6, pady=5)
         self.btn_analyze = ttk.Button(parent, text="▶  開始分析",
                                       command=self._start_analysis)
@@ -310,18 +287,142 @@ class VibrationApp:
         self.progress = ttk.Progressbar(parent, mode="indeterminate", length=310)
         self.progress.pack(padx=6)
 
+    # ─────────────── 資料輸入分頁 ────────────────────────
+
+    def _build_tab_input(self, parent):
+        """資料輸入分頁：顯示量測數據的起訖時間、頻率範圍、取樣時間、振動單位類別（唯讀）。"""
+        pad = dict(padx=6, pady=3)
+
+        # (1) 起訖時間（自動偵測，唯讀標籤）
+        _val_font = ("Microsoft JhengHei", 14, "bold")   # 回覆值：放大加粗
+        g = ttk.LabelFrame(parent, text="起訖時間", padding=5)
+        g.pack(fill=tk.X, **pad)
+        self.var_start_date = tk.StringVar(value="偵測中...")
+        self.var_start_time = tk.StringVar(value="")
+        self.var_end_date   = tk.StringVar(value="偵測中...")
+        self.var_end_time   = tk.StringVar(value="")
+        for lbl, var in [
+            ("開始日期:", self.var_start_date),
+            ("開始時間:", self.var_start_time),
+            ("結束日期:", self.var_end_date),
+            ("結束時間:", self.var_end_time),
+        ]:
+            row = ttk.Frame(g); row.pack(fill=tk.X, pady=2)
+            ttk.Label(row, text=lbl, width=9).pack(side=tk.LEFT)
+            ttk.Label(row, textvariable=var, anchor=tk.E,
+                      foreground="#2c5282", font=_val_font).pack(side=tk.RIGHT)
+        ttk.Label(g, text="自動讀取 .rnd 檔案之量測起訖時間（唯讀）",
+                  font=("",7), foreground="gray").pack(anchor=tk.W)
+
+        # (2) 頻率範圍（自動偵測，唯讀標籤）
+        g = ttk.LabelFrame(parent, text="頻率範圍", padding=5)
+        g.pack(fill=tk.X, **pad)
+        self.var_input_freq_low  = tk.StringVar(value="—")
+        self.var_input_freq_high = tk.StringVar(value="—")
+        for lbl, var in [("最低頻率:", self.var_input_freq_low),
+                         ("最高頻率:", self.var_input_freq_high)]:
+            row = ttk.Frame(g); row.pack(fill=tk.X, pady=2)
+            ttk.Label(row, text=lbl, width=9).pack(side=tk.LEFT)
+            ttk.Label(row, textvariable=var, anchor=tk.E,
+                      foreground="#2c5282", font=_val_font).pack(side=tk.RIGHT)
+
+        # (3) 取樣時間（自動偵測，唯讀標籤）
+        g = ttk.LabelFrame(parent, text="取樣時間", padding=5)
+        g.pack(fill=tk.X, **pad)
+        self.var_input_sample = tk.StringVar(value="偵測中...")
+        ttk.Label(g, textvariable=self.var_input_sample,
+                  foreground="#2c5282", font=_val_font).pack(anchor=tk.W)
+
+        # (4) 振動單位（加速度或速度）
+        g = ttk.LabelFrame(parent, text="振動單位", padding=5)
+        g.pack(fill=tk.X, **pad)
+        self.var_input_unit_type = tk.StringVar(value="加速度")
+        ttk.Radiobutton(g, text="加速度 (m/s²)",
+                        variable=self.var_input_unit_type,
+                        value="加速度").pack(anchor=tk.W, pady=1)
+        ttk.Radiobutton(g, text="速度 (m/s)",
+                        variable=self.var_input_unit_type,
+                        value="速度").pack(anchor=tk.W, pady=1)
+        ttk.Label(g, text="原始 .rnd 檔記錄之物理量類型",
+                  font=("",7), foreground="gray").pack(anchor=tk.W)
+
+        # (5) 檔案資訊（唯讀）
+        g = ttk.LabelFrame(parent, text="檔案資訊", padding=5)
+        g.pack(fill=tk.X, **pad)
+        self.var_input_file_count = tk.StringVar(value="偵測中...")
+        ttk.Label(g, textvariable=self.var_input_file_count,
+                  foreground="#2c5282", font=_val_font).pack(anchor=tk.W)
+
+    # ─────────────── 數據分析分頁 ────────────────────────
+
+    def _build_tab_analysis(self, parent):
+        """數據分析分頁：分析時間、頻率範圍、振動量單位、分析間距。"""
+        pad = dict(padx=6, pady=3)
+
+        # (1) 分析時間
+        g = ttk.LabelFrame(parent, text="分析時間", padding=5)
+        g.pack(fill=tk.X, **pad)
+        for lbl, attr, val in [
+            ("開始日期:", "var_ana_start_date", "2026/04/16"),
+            ("開始時間:", "var_ana_start_time", "00:00:00.0"),
+            ("結束日期:", "var_ana_end_date",   "2026/04/23"),
+            ("結束時間:", "var_ana_end_time",   "23:59:59.9"),
+        ]:
+            row = ttk.Frame(g); row.pack(fill=tk.X, pady=1)
+            ttk.Label(row, text=lbl, width=9).pack(side=tk.LEFT)
+            var = tk.StringVar(value=val); setattr(self, attr, var)
+            ttk.Entry(row, textvariable=var, width=16).pack(side=tk.RIGHT)
+        ttk.Label(g, text="格式  YYYY/MM/DD  HH:MM:SS.f",
+                  font=("",7), foreground="gray").pack(anchor=tk.W)
+
+        # 當「開始日期」被修改時，自動查詢該日期的首尾時間
+        self._ana_date_trace_active = True
+        self.var_ana_start_date.trace_add("write", self._on_ana_start_date_changed)
+
+        # (2) 頻率範圍
+        g = ttk.LabelFrame(parent, text="頻率範圍", padding=5)
+        g.pack(fill=tk.X, **pad)
+        for lbl, attr, val in [("最低頻率:", "var_freq_low", "1 Hz"),
+                                ("最高頻率:", "var_freq_high", "100 Hz")]:
+            row = ttk.Frame(g); row.pack(fill=tk.X, pady=1)
+            ttk.Label(row, text=lbl, width=9).pack(side=tk.LEFT)
+            var = tk.StringVar(value=val); setattr(self, attr, var)
+            ttk.Combobox(row, textvariable=var, values=FREQ_NAMES,
+                         width=10, state="readonly").pack(side=tk.RIGHT)
+
+        # (3) 振動量單位
+        g = ttk.LabelFrame(parent, text="振動量單位", padding=5)
+        g.pack(fill=tk.X, **pad)
+        self._build_unit_tree(g)
+        # 目前選擇的物理量單位（動態更新）
+        self.var_unit_hint = tk.StringVar(value="物理量: m/s²（SI 加速度基本單位）")
+        ttk.Label(g, textvariable=self.var_unit_hint,
+                  font=("",7), foreground="#2c5282",
+                  wraplength=295).pack(anchor=tk.W, pady=(3,0))
+
+        # (4) 分析間距
+        g = ttk.LabelFrame(parent, text="分析間距", padding=5)
+        g.pack(fill=tk.X, **pad)
+        self.var_interval = tk.StringVar(value="原始 (0.1s)")
+        cols_f = ttk.Frame(g); cols_f.pack(fill=tk.X)
+        for lbl, _, _ in INTERVAL_OPTIONS:
+            ttk.Radiobutton(cols_f, text=lbl, variable=self.var_interval,
+                            value=lbl).pack(anchor=tk.W, pady=1)
+        ttk.Label(g, text="原始資料 0.1s/筆；間距決定 RMS 聚合粒度",
+                  font=("",7), foreground="gray").pack(anchor=tk.W)
+
     # ─────────────── 振動量單位下拉選單 ─────────────────
 
     def _build_unit_tree(self, parent):
         UNIT_OPTIONS = [
-            ("m/s²",   "加速度 m/s² — SI 基本單位"),
-            ("g",      "加速度 g — 9.80665 m/s²"),
-            ("Gal",    "加速度 Gal — 0.01 m/s²"),
-            ("dB_acc", "加速度 dB — ref 10⁻⁶ m/s²"),
-            ("m/s",    "速度 m/s — SI 基本單位"),
-            ("mm/s",   "速度 mm/s — ×10³ m/s"),
-            ("ips",    "速度 ips — 英制 in/s"),
-            ("dB_vel", "速度 dB — ref 2.54×10⁻⁸ m/s"),
+            ("m/s²",      "加速度 m/s²"),
+            ("g",         "加速度 g — 9.80665 m/s²"),
+            ("Gal",       "加速度 Gal — 0.01 m/s²"),
+            ("dB_acc",    "加速度 dB — ref 10⁻⁶ m/s²"),
+            ("dB_acc5",   "加速度 dB — ref 10⁻⁵ m/s²"),
+            ("dB_acc_Wm", "加速度 dB — 頻率Wm加權"),
+            ("m/s",       "速度 m/s"),
+            ("dB_vel",    "速度 dB — ref 2.54×10⁻⁸ m/s"),
         ]
         self._unit_options_map = {text: key for key, text in UNIT_OPTIONS}
         display_values = [text for _, text in UNIT_OPTIONS]
@@ -408,7 +509,7 @@ class VibrationApp:
                    command=lambda: self._raw_goto(self._raw_total_pages-1)).pack(side=tk.LEFT, padx=(2,0))
 
         frame = ttk.Frame(parent)
-        frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0,6))
+        frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0,3))
         self.raw_tree = ttk.Treeview(frame, show="headings", selectmode="browse")
         vsb = ttk.Scrollbar(frame, orient=tk.VERTICAL,   command=self.raw_tree.yview)
         hsb = ttk.Scrollbar(frame, orient=tk.HORIZONTAL, command=self.raw_tree.xview)
@@ -418,6 +519,21 @@ class VibrationApp:
         self.raw_tree.pack(fill=tk.BOTH, expand=True)
         self.raw_tree.tag_configure("odd",  background="#f8f8f8")
         self.raw_tree.tag_configure("even", background="white")
+
+        # ── 統計量摘要區 ──
+        stat_frame = ttk.LabelFrame(parent, text="統計量摘要（寬頻）", padding=4)
+        stat_frame.pack(fill=tk.X, padx=6, pady=(0,6))
+        stat_cols = ["軸別", "L5", "L10", "L50", "L90", "L95", "Lmax"]
+        self.raw_stat_tree = ttk.Treeview(stat_frame, columns=stat_cols,
+                                           show="headings", height=4,
+                                           selectmode="browse")
+        for col in stat_cols:
+            w = 60 if col == "軸別" else 100
+            self.raw_stat_tree.heading(col, text=col, anchor=tk.CENTER)
+            self.raw_stat_tree.column(col, width=w, anchor=tk.CENTER, minwidth=50)
+        self.raw_stat_tree.pack(fill=tk.X)
+        self.raw_stat_tree.tag_configure("odd",  background="#f8f8f8")
+        self.raw_stat_tree.tag_configure("even", background="white")
 
     # ─────────────── 時間序列分頁 ────────────────────────
 
@@ -439,6 +555,8 @@ class VibrationApp:
                      values=["與分析間距相同","1s","10s","1min","10min","30min"],
                      width=14, state="readonly").pack(side=tk.LEFT)
         ttk.Button(bar, text="更新", command=self._refresh_time).pack(side=tk.LEFT, padx=3)
+        ttk.Button(bar, text="匯出圖表",
+                   command=lambda: self._export_chart(self.fig_time, "時間序列")).pack(side=tk.RIGHT, padx=4)
 
         self.fig_time = Figure(figsize=(11,5), dpi=96, tight_layout=True)
         self.ax_time  = self.fig_time.add_subplot(111)
@@ -466,6 +584,8 @@ class VibrationApp:
                           ("Z",self.show_fz),("XYZ",self.show_fxyz)]:
             ttk.Checkbutton(bar, text=text, variable=var,
                             command=self._refresh_freq).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bar, text="匯出圖表",
+                   command=lambda: self._export_chart(self.fig_freq, "頻率分析")).pack(side=tk.RIGHT, padx=4)
 
         self.fig_freq = Figure(figsize=(11,5), dpi=96, tight_layout=True)
         self.ax_freq  = self.fig_freq.add_subplot(111)
@@ -545,6 +665,8 @@ class VibrationApp:
         # ── 第一列：量測軸別 ──────────────────────────────
         row1 = ttk.Frame(toolbar)
         row1.pack(fill=tk.X, pady=2)
+        ttk.Button(row1, text="匯出圖表",
+                   command=lambda: self._export_chart(self.fig_vc, "VC曲線")).pack(side=tk.RIGHT, padx=4)
         ttk.Label(row1, text="量測軸別:", width=9, anchor=tk.W).pack(side=tk.LEFT)
         self.vc_show_x   = tk.BooleanVar(value=False)
         self.vc_show_y   = tk.BooleanVar(value=False)
@@ -686,40 +808,201 @@ class VibrationApp:
             self._auto_detect_time_range()
 
     def _auto_detect_time_range(self):
-        """掃描 .rnd 檔，自動偵測量測起迄時間並填入側邊欄。"""
+        """掃描所有 .rnd 檔的 Start Time，取全域最早/最晚時間戳。"""
         root_dir = self.var_dir.get().strip()
         if not os.path.isdir(root_dir):
+            self.var_start_date.set("無資料"); self.var_start_time.set("")
+            self.var_end_date.set("無資料");   self.var_end_time.set("")
+            self.var_input_file_count.set("找不到 .rnd 檔案")
             return
         rnd_files = self._find_rnd_files(root_dir)
         if not rnd_files:
+            self.var_start_date.set("無資料"); self.var_start_time.set("")
+            self.var_end_date.set("無資料");   self.var_end_time.set("")
+            self.var_input_file_count.set("找不到 .rnd 檔案")
             return
-        # 取第一個與最後一個檔案，分別讀頭尾以取得時間範圍
+
+        self.var_start_date.set("掃描中...")
+        self.var_start_time.set("")
+        self.var_end_date.set("掃描中...")
+        self.var_end_time.set("")
+        self.var_input_file_count.set(f"掃描 {len(rnd_files)} 個 .rnd 檔案...")
+        self.root.update_idletasks()
+
+        # 背景執行緒掃描全部檔案
+        threading.Thread(target=self._scan_all_rnd,
+                         args=(rnd_files,), daemon=True).start()
+
+    def _read_rnd_time_range(self, path: str):
+        """讀取單一 .rnd 檔的首尾 Start Time（只讀 Start Time 欄）。"""
+        try:
+            df = pd.read_csv(path, skiprows=1, na_values=["--","UN","OL",""],
+                             dtype=str, usecols=["Start Time"], low_memory=False)
+            df.columns = [c.strip() for c in df.columns]
+            ts = pd.to_datetime(df["Start Time"].str.strip(),
+                                format="%Y/%m/%d %H:%M:%S.%f", errors="coerce")
+            ts = ts.dropna()
+            if len(ts) == 0:
+                return None
+            return (ts.min(), ts.max())
+        except Exception:
+            return None
+
+    def _scan_all_rnd(self, rnd_files: list[str]):
+        """平行掃描所有 .rnd 檔取全域起迄時間、頻率範圍、取樣間距。"""
+        import re
         t_min, t_max = None, None
-        for f in [rnd_files[0], rnd_files[-1]]:
-            try:
-                df = pd.read_csv(f, skiprows=1, na_values=["--","UN","OL",""],
-                                 dtype=str, usecols=["Start Time"], low_memory=False)
-                df.columns = [c.strip() for c in df.columns]
-                ts = pd.to_datetime(df["Start Time"].str.strip(),
-                                    format="%Y/%m/%d %H:%M:%S.%f", errors="coerce")
-                ts = ts.dropna()
-                if len(ts) == 0:
+        detected_freqs = set()
+        sample_interval = None
+
+        # 讀取第一個檔案的標頭偵測頻率欄位與取樣間距
+        try:
+            df_first = pd.read_csv(rnd_files[0], skiprows=1, nrows=5,
+                                    na_values=["--","UN","OL",""],
+                                    dtype=str, low_memory=False)
+            df_first.columns = [c.strip() for c in df_first.columns]
+            for col in df_first.columns:
+                m = re.match(r'^[XYZ]_(.+\s*Hz)$', col)
+                if m:
+                    detected_freqs.add(m.group(1).strip())
+            if "Start Time" in df_first.columns:
+                ts_s = pd.to_datetime(df_first["Start Time"].str.strip(),
+                                      format="%Y/%m/%d %H:%M:%S.%f", errors="coerce").dropna()
+                if len(ts_s) >= 2:
+                    sample_interval = (ts_s.iloc[1] - ts_s.iloc[0]).total_seconds()
+        except Exception:
+            pass
+
+        # 平行讀取所有 .rnd 檔的首尾時間戳
+        file_times = []
+        with ThreadPoolExecutor(max_workers=min(8, len(rnd_files))) as ex:
+            futures = {ex.submit(self._read_rnd_time_range, f): f for f in rnd_files}
+            for fut in as_completed(futures):
+                f = futures[fut]
+                result = fut.result()
+                if result is None:
                     continue
-                fmin, fmax = ts.min(), ts.max()
+                fmin, fmax = result
+                file_times.append((f, fmin, fmax))
                 t_min = fmin if t_min is None else min(t_min, fmin)
                 t_max = fmax if t_max is None else max(t_max, fmax)
-            except Exception:
-                continue
+
+        # 回到主執行緒更新 UI
+        self._queue.put(("_detect_done", {
+            "t_min": t_min, "t_max": t_max,
+            "detected_freqs": detected_freqs,
+            "sample_interval": sample_interval,
+            "file_count": len(rnd_files),
+            "file_times": file_times,
+        }))
+
+    def _apply_detect_result(self, info: dict):
+        """將掃描結果套用到資料輸入 / 數據分析分頁。"""
+        t_min = info["t_min"]
+        t_max = info["t_max"]
+        detected_freqs = info["detected_freqs"]
+        sample_interval = info["sample_interval"]
+        file_count = info["file_count"]
+
+        # 儲存每個檔案的時間範圍，供日期切換時查詢
+        self._rnd_file_times = info.get("file_times", [])
+
+        self.var_input_file_count.set(f"共 {file_count} 個 .rnd 檔案")
+
         if t_min is not None and t_max is not None:
             self.var_start_date.set(t_min.strftime("%Y/%m/%d"))
             self.var_start_time.set(t_min.strftime("%H:%M:%S.%f")[:-5])
             self.var_end_date.set(t_max.strftime("%Y/%m/%d"))
             self.var_end_time.set(t_max.strftime("%H:%M:%S.%f")[:-5])
+            # 先暫停 trace 再設值，避免觸發不必要的掃描
+            self._ana_date_trace_active = False
+            self.var_ana_start_date.set(t_min.strftime("%Y/%m/%d"))
+            self.var_ana_start_time.set(t_min.strftime("%H:%M:%S.%f")[:-5])
+            self.var_ana_end_date.set(t_max.strftime("%Y/%m/%d"))
+            self.var_ana_end_time.set(t_max.strftime("%H:%M:%S.%f")[:-5])
+            self._ana_date_trace_active = True
+        else:
+            self.var_start_date.set("無法偵測"); self.var_start_time.set("")
+            self.var_end_date.set("無法偵測");   self.var_end_time.set("")
+
+        if detected_freqs:
+            matched = [fn for fn in FREQ_NAMES if fn in detected_freqs]
+            if matched:
+                self.var_input_freq_low.set(matched[0])
+                self.var_input_freq_high.set(matched[-1])
+
+        if sample_interval is not None:
+            self.var_input_sample.set(f"{sample_interval:.1f} 秒 / 筆")
+
+    def _on_ana_start_date_changed(self, *_args):
+        """當數據分析分頁的「開始日期」被修改時，
+        自動以該日期在 .rnd 檔中的第一筆 Start Time 填入「開始時間」，
+        最後一筆 Start Time 填入「結束時間」，並同步「結束日期」。"""
+        if not self._ana_date_trace_active:
+            return
+        if not self._rnd_file_times:
+            return
+        date_str = self.var_ana_start_date.get().strip()
+        # 解析使用者輸入的日期
+        try:
+            target_date = datetime.datetime.strptime(date_str, "%Y/%m/%d").date()
+        except ValueError:
+            return  # 格式不完整或不正確，暫不處理
+
+        # 從已掃描的檔案時間範圍中，找出所有與目標日期有交集的檔案
+        candidate_files = []
+        for fpath, ft_min, ft_max in self._rnd_file_times:
+            if ft_min.date() <= target_date <= ft_max.date():
+                candidate_files.append(fpath)
+
+        if not candidate_files:
+            self.var_ana_start_time.set("00:00:00.0")
+            self.var_ana_end_date.set(date_str)
+            self.var_ana_end_time.set("23:59:59.9")
+            return
+
+        # 背景掃描候選檔案，找出該日期的精確首尾時間
+        self.var_ana_start_time.set("查詢中...")
+        self.var_ana_end_time.set("查詢中...")
+        self.var_ana_end_date.set(date_str)
+        threading.Thread(target=self._scan_date_times,
+                         args=(candidate_files, target_date), daemon=True).start()
+
+    def _scan_date_times(self, files: list[str], target_date):
+        """掃描指定檔案，找出 target_date 當日的第一筆與最後一筆 Start Time。"""
+        t_min, t_max = None, None
+
+        def _read_date_range(path):
+            try:
+                df = pd.read_csv(path, skiprows=1, na_values=["--","UN","OL",""],
+                                 dtype=str, usecols=["Start Time"], low_memory=False)
+                df.columns = [c.strip() for c in df.columns]
+                ts = pd.to_datetime(df["Start Time"].str.strip(),
+                                    format="%Y/%m/%d %H:%M:%S.%f", errors="coerce")
+                ts = ts.dropna()
+                # 只保留目標日期的資料
+                mask = ts.dt.date == target_date
+                ts = ts[mask]
+                if len(ts) == 0:
+                    return None
+                return (ts.min(), ts.max())
+            except Exception:
+                return None
+
+        with ThreadPoolExecutor(max_workers=min(8, len(files))) as ex:
+            for result in ex.map(_read_date_range, files):
+                if result is None:
+                    continue
+                fmin, fmax = result
+                t_min = fmin if t_min is None else min(t_min, fmin)
+                t_max = fmax if t_max is None else max(t_max, fmax)
+
+        self._queue.put(("_date_scan_done", (target_date, t_min, t_max)))
 
     def _parse_params(self) -> dict:
         root_dir = self.var_dir.get().strip()
         if not os.path.isdir(root_dir):
-            raise ValueError(f"目錄不存在:\n{root_dir}")
+            raise ValueError(f"目��不存在:\n{root_dir}")
         def _parse_dt(date_str, time_str):
             s = f"{date_str.strip()} {time_str.strip()}"
             for fmt in ("%Y/%m/%d %H:%M:%S.%f", "%Y/%m/%d %H:%M:%S"):
@@ -729,8 +1012,8 @@ class VibrationApp:
                     continue
             raise ValueError(f"無法解析: {s}")
         try:
-            start_dt = _parse_dt(self.var_start_date.get(), self.var_start_time.get())
-            end_dt   = _parse_dt(self.var_end_date.get(),   self.var_end_time.get())
+            start_dt = _parse_dt(self.var_ana_start_date.get(), self.var_ana_start_time.get())
+            end_dt   = _parse_dt(self.var_ana_end_date.get(),   self.var_ana_end_time.get())
         except ValueError as e:
             raise ValueError(f"日期/時間格式錯誤:\n{e}")
         if start_dt >= end_dt:
@@ -918,6 +1201,21 @@ class VibrationApp:
                     self.btn_analyze.config(state=tk.NORMAL)
                     self.var_status.set("分析失敗")
                     messagebox.showerror("錯誤", payload)
+                elif msg_type == "_detect_done":
+                    self._apply_detect_result(payload)
+                elif msg_type == "_date_scan_done":
+                    target_date, dt_min, dt_max = payload
+                    date_str = target_date.strftime("%Y/%m/%d")
+                    if dt_min is not None and dt_max is not None:
+                        self._ana_date_trace_active = False
+                        self.var_ana_start_time.set(dt_min.strftime("%H:%M:%S.%f")[:-5])
+                        self.var_ana_end_date.set(date_str)
+                        self.var_ana_end_time.set(dt_max.strftime("%H:%M:%S.%f")[:-5])
+                        self._ana_date_trace_active = True
+                    else:
+                        self.var_ana_start_time.set("00:00:00.0")
+                        self.var_ana_end_date.set(date_str)
+                        self.var_ana_end_time.set("23:59:59.9")
                 elif msg_type == "done":
                     df, results, params, n_rows, n_agg = payload
                     self._df = df; self._results = results; self._params = params
@@ -944,11 +1242,17 @@ class VibrationApp:
         if not self._params: return "m/s²"
         return self._params["unit_label"]
 
-    def _to_display(self, val: float) -> float:
-        """將基底單位值換算為顯示單位（dB 或線性）。"""
+    def _to_display(self, val: float, freq: float = 0.0) -> float:
+        """將基底單位值換算為顯示單位（dB 或線性）。
+        freq: 頻率（Hz），Wm 加權時需要。"""
         if not self._params or not np.isfinite(val): return val
-        _, _, _, scale, db_ref_default = UNIT_DEFS[self._params["unit_key"]]
+        unit_key = self._params["unit_key"]
+        _, _, _, scale, db_ref_default = UNIT_DEFS[unit_key]
         db_ref = self._params["db_ref"]
+        if unit_key == "dB_acc_Wm":
+            wm = WM_WEIGHTS.get(freq, 1.0) if freq > 0 else 1.0
+            weighted = val * wm
+            return 20.0 * np.log10(max(weighted, 1e-300) / db_ref) if db_ref else val
         if db_ref_default is not None:
             return 20.0 * np.log10(max(val, 1e-300) / db_ref) if db_ref else val
         return val * scale
@@ -991,6 +1295,39 @@ class VibrationApp:
         self._raw_total_pages = max(1, -(-total // self.RAW_PAGE_SIZE))
         self._raw_setup_columns()
         self._raw_show_page(0)
+        self._refresh_raw_stats()
+
+    def _refresh_raw_stats(self):
+        """更新原始數據分頁的統計量摘要（寬頻 L5/L10/L50/L90/L95/Lmax）。"""
+        self.raw_stat_tree.delete(*self.raw_stat_tree.get_children())
+        if self._raw_display_df is None or self._params is None:
+            return
+        df = self._raw_display_df
+        axes_show = AXES if self.var_raw_axis.get() == "全部" else [self.var_raw_axis.get()[0]]
+        for i, ax in enumerate(axes_show):
+            col = f"_BB_{ax}"
+            if col not in df.columns:
+                continue
+            vals = df[col].values.astype(np.float64)
+            st = calc_stats(vals)
+            self.raw_stat_tree.insert("", "end",
+                values=(f"{ax} 軸",
+                        self._fmt_d(st["L5"]), self._fmt_d(st["L10"]),
+                        self._fmt_d(st["L50"]), self._fmt_d(st["L90"]),
+                        self._fmt_d(st["L95"]), self._fmt_d(st["Lmax"])),
+                tags=("odd" if i % 2 == 0 else "even",))
+        # XYZ 合成
+        bb_cols = [f"_BB_{ax}" for ax in AXES if f"_BB_{ax}" in df.columns]
+        if bb_cols:
+            mat = np.nan_to_num(df[bb_cols].values.astype(np.float64))
+            xyz_bb = np.sqrt(np.sum(mat**2, axis=1))
+            st = calc_stats(xyz_bb)
+            self.raw_stat_tree.insert("", "end",
+                values=("XYZ",
+                        self._fmt_d(st["L5"]), self._fmt_d(st["L10"]),
+                        self._fmt_d(st["L50"]), self._fmt_d(st["L90"]),
+                        self._fmt_d(st["L95"]), self._fmt_d(st["Lmax"])),
+                tags=("odd" if len(axes_show) % 2 == 0 else "even",))
 
     def _raw_setup_columns(self):
         if not self._params: return
@@ -1060,7 +1397,7 @@ class VibrationApp:
             messagebox.showinfo("提示","請先執行分析"); return
         path = filedialog.asksaveasfilename(
             defaultextension=".csv", filetypes=[("CSV","*.csv")],
-            initialfile="raw_data.csv")
+            initialfile="原始數據.csv")
         if not path: return
         df  = self._raw_display_df.copy()
         unit = self._unit_label()
@@ -1522,6 +1859,7 @@ class VibrationApp:
         path = filedialog.asksaveasfilename(
             defaultextension=".csv",
             filetypes=[("CSV 檔案", "*.csv")],
+            initialfile="環境振動.csv",
             title="匯出環境振動統計")
         if not path:
             return
@@ -1542,7 +1880,7 @@ class VibrationApp:
             messagebox.showinfo("提示","請先執行分析"); return
         path = filedialog.asksaveasfilename(
             defaultextension=".csv", filetypes=[("CSV","*.csv")],
-            initialfile="vibration_statistics.csv")
+            initialfile="統計表.csv")
         if not path: return
         p = self._params
         unit = self._unit_label()
@@ -1564,6 +1902,21 @@ class VibrationApp:
         pd.DataFrame(rows, columns=["軸別","分析期間","頻段","單位"]+STATS).to_csv(
             path, index=False, encoding="utf-8-sig")
         messagebox.showinfo("匯出完成", f"已儲存至:\n{path}")
+
+    # ════════════════════════════════════════════════════════
+    #  圖表匯出（以分頁名稱命名）
+    # ════════════════════════════════════════════════════════
+
+    def _export_chart(self, fig: Figure, tab_name: str):
+        """匯出圖表為 PNG，檔名以分頁名稱命名。"""
+        path = filedialog.asksaveasfilename(
+            defaultextension=".png",
+            filetypes=[("PNG 圖片", "*.png"), ("SVG 向量圖", "*.svg"), ("PDF", "*.pdf")],
+            initialfile=f"{tab_name}.png")
+        if not path:
+            return
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        messagebox.showinfo("匯出完成", f"圖表已儲存至:\n{path}")
 
 
 # ════════════════════════════════════════════════════════
