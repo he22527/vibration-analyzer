@@ -10,7 +10,7 @@ import matplotlib
 matplotlib.use("TkAgg")
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-import os, glob, datetime, threading, queue
+import os, glob, datetime, threading, queue, tempfile, sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ════════════════════════════════════════════════════════
@@ -479,6 +479,13 @@ class VibrationApp:
             self.nb.add(t, text=text)
             builder(t)
 
+        # 輸出報告分頁（分析完成後才顯示）
+        self._report_tab = ttk.Frame(self.nb)
+        self._build_report_tab(self._report_tab)
+        # 預先加入但隱藏
+        self.nb.add(self._report_tab, text="  輸出報告  ")
+        self.nb.hide(self.nb.index(self._report_tab))
+
     # ─────────────── 原始數據分頁 ────────────────────────
 
     def _build_raw_tab(self, parent):
@@ -796,6 +803,32 @@ class VibrationApp:
             background="#dce8f5", font=("Microsoft JhengHei", 14))
         self.env_tree.tag_configure("odd",  background="#f8f8f8")
         self.env_tree.tag_configure("even", background="white")
+
+    # ─────────────── 輸出報告分頁 ──────────────────────────
+
+    def _build_report_tab(self, parent):
+        frm = ttk.Frame(parent)
+        frm.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        ttk.Label(frm, text="輸出報告",
+                  font=("Microsoft JhengHei", 16, "bold")).pack(pady=(20, 10))
+        ttk.Label(frm,
+                  text="將所有分頁的數據表格與圖形整合為 Word 報告，\n"
+                       "每個段落包含總結說明文字、表格及圖表。",
+                  font=("Microsoft JhengHei", 10), justify=tk.CENTER,
+                  foreground="#555").pack(pady=(0, 20))
+        self._report_info_var = tk.StringVar(value="")
+        ttk.Label(frm, textvariable=self._report_info_var,
+                  font=("Microsoft JhengHei", 9), foreground="#2c5282",
+                  wraplength=600, justify=tk.CENTER).pack(pady=(0, 10))
+        self.btn_report = ttk.Button(frm, text="▶  產生 Word 報告",
+                                      command=self._generate_report)
+        self.btn_report.pack(pady=10)
+        self._report_status_var = tk.StringVar(value="")
+        ttk.Label(frm, textvariable=self._report_status_var,
+                  font=("", 9), foreground="gray",
+                  wraplength=700, justify=tk.CENTER).pack(pady=5)
+        self._report_progress = ttk.Progressbar(frm, mode="indeterminate", length=400)
+        self._report_progress.pack(pady=5)
 
     # ════════════════════════════════════════════════════════
     #  事件處理 / 參數解析
@@ -1216,6 +1249,19 @@ class VibrationApp:
                         self.var_ana_start_time.set("00:00:00.0")
                         self.var_ana_end_date.set(date_str)
                         self.var_ana_end_time.set("23:59:59.9")
+                elif msg_type == "_report_status":
+                    self._report_status_var.set(payload)
+                elif msg_type == "_report_done":
+                    self._report_progress.stop()
+                    self.btn_report.config(state=tk.NORMAL)
+                    self._report_status_var.set(f"報告已儲存：{payload}")
+                    messagebox.showinfo("輸出報告完成",
+                        f"Word 報告已成功產生並儲存至：\n{payload}")
+                elif msg_type == "_report_error":
+                    self._report_progress.stop()
+                    self.btn_report.config(state=tk.NORMAL)
+                    self._report_status_var.set("報告產生失敗")
+                    messagebox.showerror("輸出報告錯誤", payload)
                 elif msg_type == "done":
                     df, results, params, n_rows, n_agg = payload
                     self._df = df; self._results = results; self._params = params
@@ -1230,6 +1276,14 @@ class VibrationApp:
                     self._refresh_stats()
                     self._refresh_vc()
                     self._refresh_env()
+                    # 顯示「輸出報告」分頁
+                    report_idx = self.nb.index(self._report_tab)
+                    self.nb.tab(report_idx, state="normal")
+                    self._report_info_var.set(
+                        f"分析資料：{os.path.basename(params['root_dir'])}\n"
+                        f"時間範圍：{params['start_dt'].strftime('%Y/%m/%d %H:%M')} ～ "
+                        f"{params['end_dt'].strftime('%Y/%m/%d %H:%M')}\n"
+                        f"共 {n_rows:,} 筆原始數據，{n_agg:,} 個分析時段")
                     self.nb.select(0)
         except queue.Empty: pass
         self.root.after(100, self._poll_queue)
@@ -1917,6 +1971,402 @@ class VibrationApp:
             return
         fig.savefig(path, dpi=150, bbox_inches="tight")
         messagebox.showinfo("匯出完成", f"圖表已儲存至:\n{path}")
+
+
+    # ════════════════════════════════════════════════════════
+    #  輸出報告 Word 產生
+    # ════════════════════════════════════════════════════════
+
+    def _generate_report(self):
+        if self._results is None or self._params is None:
+            messagebox.showinfo("提示", "請先執行分析")
+            return
+        self.btn_report.config(state=tk.DISABLED)
+        self._report_progress.start()
+        self._report_status_var.set("正在產生報告...")
+        threading.Thread(target=self._build_word_report, daemon=True).start()
+
+    def _build_word_report(self):
+        try:
+            from docx import Document
+            from docx.shared import Inches, Pt, Cm, RGBColor
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+            from docx.enum.table import WD_TABLE_ALIGNMENT
+            from docx.oxml.ns import qn
+        except ImportError:
+            self._queue.put(("_report_error",
+                "缺少 python-docx 套件，請執行：pip install python-docx"))
+            return
+
+        try:
+            p = self._params
+            results = self._results
+            df = self._df
+            root_dir = p["root_dir"]
+            unit = self._unit_label()
+            sel_bands = p["sel_bands"]
+
+            start_str = p["start_dt"].strftime("%Y/%m/%d %H:%M:%S")
+            end_str = p["end_dt"].strftime("%Y/%m/%d %H:%M:%S")
+            period_str = f"{start_str} ～ {end_str}"
+            folder_name = os.path.basename(root_dir.rstrip("\\/"))
+            doc_path = os.path.join(root_dir, f"{folder_name}.docx")
+
+            doc = Document()
+
+            # ── 全域樣式 ──
+            style = doc.styles["Normal"]
+            style.font.name = "Microsoft JhengHei"
+            style.font.size = Pt(11)
+            style.element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft JhengHei")
+            style.paragraph_format.space_after = Pt(6)
+
+            # ── 封面標題 ──
+            title = doc.add_heading("背景振動量測數據分析報告", level=0)
+            title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            doc.add_paragraph("")
+            info_p = doc.add_paragraph()
+            info_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            info_runs = [
+                (f"量測資料夾：{folder_name}", False),
+                (f"\n分析期間：{period_str}", False),
+                (f"\n分析間距：{p['interval_label']}", False),
+                (f"\n振動量單位：{unit}", False),
+                (f"\n頻率範圍：{sel_bands[0][1]} ～ {sel_bands[-1][1]}", False),
+                (f"\n總資料筆數：{len(df):,} 筆", False),
+            ]
+            for text, bold in info_runs:
+                run = info_p.add_run(text)
+                run.bold = bold
+                run.font.size = Pt(12)
+
+            doc.add_page_break()
+
+            # 暫存圖片目錄
+            tmp_dir = tempfile.mkdtemp(prefix="vib_report_")
+
+            def _set_cell_shading(cell, color_hex):
+                shading = cell._element.get_or_add_tcPr()
+                shd = shading.makeelement(qn("w:shd"), {
+                    qn("w:fill"): color_hex,
+                    qn("w:val"): "clear",
+                })
+                shading.append(shd)
+
+            def _add_table_from_data(doc, headers, rows, col_widths=None):
+                tbl = doc.add_table(rows=1 + len(rows), cols=len(headers))
+                tbl.style = "Table Grid"
+                tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+                for j, h in enumerate(headers):
+                    cell = tbl.rows[0].cells[j]
+                    cell.text = h
+                    for par in cell.paragraphs:
+                        par.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        for run in par.runs:
+                            run.bold = True
+                            run.font.size = Pt(9)
+                    _set_cell_shading(cell, "C8D8F0")
+                for i, row_data in enumerate(rows):
+                    for j, val in enumerate(row_data):
+                        cell = tbl.rows[i + 1].cells[j]
+                        cell.text = str(val)
+                        for par in cell.paragraphs:
+                            par.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            for run in par.runs:
+                                run.font.size = Pt(9)
+                if col_widths:
+                    for j, w in enumerate(col_widths):
+                        for row in tbl.rows:
+                            row.cells[j].width = Cm(w)
+                return tbl
+
+            def _save_fig(fig, name):
+                path = os.path.join(tmp_dir, f"{name}.png")
+                fig.savefig(path, dpi=180, bbox_inches="tight",
+                            facecolor="white", edgecolor="none")
+                return path
+
+            # ═══════════════════════════════════════════════
+            #  1. 原始數據
+            # ═══════════════════════════════════════════════
+            self._queue.put(("_report_status", "正在寫入原始數據段落..."))
+            doc.add_heading("一、原始數據", level=1)
+            n_total = len(df)
+            raw_summary = (
+                f"本次背景振動量測作業於 {start_str} 至 {end_str} 期間進行連續監測，"
+                f"採用精密振動感測器以 {p['interval_label']} 之間距記錄三軸（X、Y、Z）方向之加速度值，"
+                f"涵蓋 {sel_bands[0][1]} 至 {sel_bands[-1][1]} 共 {len(sel_bands)} 個 1/3 八度音頻帶，"
+                f"量測數據單位為 {unit}。"
+                f"經資料彙整與去重複處理後，共計取得 {n_total:,} 筆有效量測紀錄。"
+                f"各筆紀錄均包含時間戳記與各頻帶之三軸振動加速度值，並據此計算寬頻合成值 "
+                f"√(X² + Y² + Z²) 作為綜合評估依據。"
+                f"下表列出前 50 筆量測數據樣本，完整數據可透過程式匯出 CSV 檔案進行詳細檢視。"
+            )
+            doc.add_paragraph(raw_summary)
+
+            # 原始數據表格（前 50 筆）
+            show_n = min(50, n_total)
+            raw_headers = ["編號", "時間"]
+            for ax in AXES:
+                raw_headers.append(f"{ax} 寬頻")
+            raw_rows = []
+            raw_df = self._prepare_raw_df()
+            if raw_df is not None:
+                for i in range(show_n):
+                    row = raw_df.iloc[i]
+                    ts = row.get("Start Time")
+                    ts_str = ts.strftime("%Y/%m/%d %H:%M:%S.%f")[:-5] if pd.notna(ts) else ""
+                    vals = [str(i + 1), ts_str]
+                    for ax in AXES:
+                        vals.append(self._fmt_d(row.get(f"_BB_{ax}", np.nan)))
+                    raw_rows.append(vals)
+            _add_table_from_data(doc, raw_headers, raw_rows)
+            doc.add_paragraph(f"（僅列出前 {show_n} 筆，共 {n_total:,} 筆）").alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            # 統計量摘要
+            doc.add_paragraph("")
+            doc.add_heading("原始數據統計量摘要（寬頻）", level=2)
+            stat_headers = ["軸別", "L5", "L10", "L50", "L90", "L95", "Lmax"]
+            stat_rows = []
+            for ax in AXES:
+                bb_data = results.get(ax, {}).get("broadband", {})
+                stat_rows.append([
+                    f"{ax} 軸",
+                    self._fmt_d(bb_data.get("L5")), self._fmt_d(bb_data.get("L10")),
+                    self._fmt_d(bb_data.get("L50")), self._fmt_d(bb_data.get("L90")),
+                    self._fmt_d(bb_data.get("L95")), self._fmt_d(bb_data.get("Lmax")),
+                ])
+            xyz_bb = results.get("XYZ", {}).get("broadband", {})
+            stat_rows.append([
+                "XYZ 合成",
+                self._fmt_d(xyz_bb.get("L5")), self._fmt_d(xyz_bb.get("L10")),
+                self._fmt_d(xyz_bb.get("L50")), self._fmt_d(xyz_bb.get("L90")),
+                self._fmt_d(xyz_bb.get("L95")), self._fmt_d(xyz_bb.get("Lmax")),
+            ])
+            _add_table_from_data(doc, stat_headers, stat_rows)
+
+            doc.add_page_break()
+
+            # ═══════════════════════════════════════════════
+            #  2. 時間序列
+            # ═══════════════════════════════════════════════
+            self._queue.put(("_report_status", "正在寫入時間序列段落..."))
+            doc.add_heading("二、時間序列", level=1)
+
+            # 取各軸最大值用於說明
+            max_vals = {}
+            for ax in AXES + ["XYZ"]:
+                ts_data = results.get(ax, {}).get("timeseries")
+                if ts_data is not None and len(ts_data) > 0:
+                    max_vals[ax] = float(ts_data.max())
+
+            xyz_max_str = self._fmt_d(max_vals.get("XYZ", np.nan))
+            time_summary = (
+                f"時間序列圖呈現量測期間 {period_str} 內各軸向及 XYZ 合成之寬頻振動量隨時間變化趨勢。"
+                f"圖中以 X 軸（藍色）、Y 軸（綠色）、Z 軸（紅色）及 XYZ 合成（紫色）分別標示，"
+                f"便於觀察各方向振動特性之差異與時間分布規律。"
+                f"由圖形可判讀振動量之尖峰出現時段、背景振動之穩態水準，以及是否存在週期性或異常突發振動事件。"
+                f"本次量測期間 XYZ 合成寬頻振動量最大值為 {xyz_max_str} {unit}，"
+                f"分析間距為 {p['interval_label']}，可用於評估量測地點之振動環境品質。"
+            )
+            doc.add_paragraph(time_summary)
+
+            img_time = _save_fig(self.fig_time, "時間序列")
+            doc.add_picture(img_time, width=Inches(6.0))
+            doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            doc.add_paragraph("圖：寬頻振動時間序列").alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            doc.add_page_break()
+
+            # ═══════════════════════════════════════════════
+            #  3. 頻率分析
+            # ═══════════════════════════════════════════════
+            self._queue.put(("_report_status", "正在寫入頻率分析段落..."))
+            doc.add_heading("三、頻率分析", level=1)
+
+            # 找出主要頻帶
+            xyz_bands = results.get("XYZ", {}).get("bands", {})
+            dominant_freq = "—"
+            dominant_val = 0
+            for fn, st in xyz_bands.items():
+                leq = st.get("Leq", 0)
+                if leq and np.isfinite(leq) and leq > dominant_val:
+                    dominant_val = leq
+                    dominant_freq = fn
+
+            freq_summary = (
+                f"頻率分析圖以柱狀圖呈現各 1/3 八度音頻帶（{sel_bands[0][1]} ～ {sel_bands[-1][1]}）"
+                f"之 Leq（均方根等效值）分布情形，可分別檢視 X、Y、Z 各軸向及 XYZ 合成之頻譜特性。"
+                f"透過頻率分析可辨識量測地點之主要振動頻率成分，判斷振動源特性，"
+                f"並評估各頻帶對寬頻振動量之貢獻度。"
+                f"本次量測結果顯示 XYZ 合成之 Leq 在 {dominant_freq} 頻帶達到最大值 "
+                f"{self._fmt_d(dominant_val)} {unit}，"
+                f"此一主頻資訊可作為振動源鑑定與防制對策擬定之重要參考依據。"
+                f"完整頻譜分析數據可由統計表分頁查閱各頻帶之詳細統計值。"
+            )
+            doc.add_paragraph(freq_summary)
+
+            img_freq = _save_fig(self.fig_freq, "頻率分析")
+            doc.add_picture(img_freq, width=Inches(6.0))
+            doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            doc.add_paragraph("圖：各頻段 Leq 比較").alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            doc.add_page_break()
+
+            # ═══════════════════════════════════════════════
+            #  4. 統計表
+            # ═══════════════════════════════════════════════
+            self._queue.put(("_report_status", "正在寫入統計表段落..."))
+            doc.add_heading("四、統計表", level=1)
+
+            stats_summary = (
+                f"統計表彙整分析期間 {period_str} 內各軸向（X、Y、Z 及 XYZ 合成）"
+                f"於各 1/3 八度音頻帶之七項統計量：Leq（均方根等效值）、"
+                f"L5（超過 5% 時間之振動量）、L10（超過 10%）、L50（超過 50%，中位數）、"
+                f"L90（超過 90%）、L95（超過 95%，近背景值）及 Lmax（最大值）。"
+                f"Leq 反映量測期間之能量平均水準；L5 與 Lmax 可捕捉尖峰振動事件；"
+                f"L50 代表半數以上時間之振動水準；L90 與 L95 趨近環境背景振動值。"
+                f"此統計架構可全面呈現振動環境之能量分布與變異程度，"
+                f"作為精密設備選址評估及環境振動管制之量化依據。"
+                f"分析間距為 {p['interval_label']}，振動量單位為 {unit}。"
+            )
+            doc.add_paragraph(stats_summary)
+
+            # 統計表表格
+            tbl_headers = ["軸別", "頻段", "Leq", "L5", "L10", "L50", "L90", "L95", "Lmax"]
+            tbl_rows = []
+            for axis in AXES + ["XYZ"]:
+                data = results.get(axis, {})
+                bb = data.get("broadband", {})
+                if bb:
+                    tbl_rows.append([
+                        AXIS_LABELS[axis], "★ 寬頻合計",
+                        self._fmt_d(bb.get("Leq")), self._fmt_d(bb.get("L5")),
+                        self._fmt_d(bb.get("L10")), self._fmt_d(bb.get("L50")),
+                        self._fmt_d(bb.get("L90")), self._fmt_d(bb.get("L95")),
+                        self._fmt_d(bb.get("Lmax")),
+                    ])
+                bd = data.get("bands", {})
+                for _, f_name in sel_bands:
+                    s = bd.get(f_name, {})
+                    tbl_rows.append([
+                        AXIS_LABELS[axis], f_name,
+                        self._fmt_d(s.get("Leq")), self._fmt_d(s.get("L5")),
+                        self._fmt_d(s.get("L10")), self._fmt_d(s.get("L50")),
+                        self._fmt_d(s.get("L90")), self._fmt_d(s.get("L95")),
+                        self._fmt_d(s.get("Lmax")),
+                    ])
+            _add_table_from_data(doc, tbl_headers, tbl_rows)
+
+            doc.add_page_break()
+
+            # ═══════════════════════════════════════════════
+            #  5. VC 曲線
+            # ═══════════════════════════════════════════════
+            self._queue.put(("_report_status", "正在寫入 VC 曲線段落..."))
+            doc.add_heading("五、VC 曲線比較", level=1)
+
+            # 收集 VC 等級評定結果
+            vc_grades = {}
+            for axis in AXES + ["XYZ"]:
+                bd = results.get(axis, {}).get("bands", {})
+                fn_map_local = {fv: fn for fv, fn in sel_bands}
+                eval_bands_local = []
+                for fv in VC_PLOT_FREQS:
+                    closest = min(fn_map_local.keys(), key=lambda x: abs(x - fv), default=None)
+                    if closest is not None and abs(closest - fv) / fv < 0.15:
+                        eval_bands_local.append((fv, fn_map_local[closest]))
+                if eval_bands_local:
+                    is_vel = (p["unit_cat"] == "vel")
+                    eval_vels = []
+                    for fv, fn in eval_bands_local:
+                        leq = bd.get(fn, {}).get("Leq", np.nan)
+                        if np.isfinite(leq) and leq > 0:
+                            vel_ms = leq if is_vel else leq / (2.0 * np.pi * fv)
+                            eval_vels.append((fv, vel_ms * 1e6))
+                    if eval_vels:
+                        vc_grades[axis] = _vc_grade(eval_vels)
+
+            xyz_grade = vc_grades.get("XYZ", "—")
+            vc_summary = (
+                f"VC 曲線比較圖依據 Ungar & Gordon（1991）提出之 Generic Vibration Criterion "
+                f"（振動準則曲線），將量測所得之各 1/3 八度音頻帶振動速度值"
+                f"與國際通用的 VC-A 至 VC-E 等級限值進行對照評定。"
+                f"VC 曲線以速度 RMS（μm/s）呈現，評定頻段為 4～80 Hz；"
+                f"4～8 Hz 段具有斜率修正（每 1/3 八度音帶 +2 dB），8 Hz 以上為平坦段。"
+                f"各等級對應不同精密設備之容許振動環境，例如 VC-C（12.5 μm/s）適用於微影設備，"
+                f"VC-E（3 μm/s）適用於奈米技術設備。"
+                f"本次量測結果 XYZ 合成之 Leq 評定等級為「{xyz_grade}」，"
+                f"可作為該場址精密設備配置可行性之判定依據。"
+            )
+            doc.add_paragraph(vc_summary)
+
+            img_vc = _save_fig(self.fig_vc, "VC曲線")
+            doc.add_picture(img_vc, width=Inches(6.0))
+            doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            doc.add_paragraph("圖：VC 曲線比較（Ungar & Gordon, 1991）").alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            # VC 等級評定結果表格
+            doc.add_paragraph("")
+            doc.add_heading("VC 等級評定結果", level=2)
+            vc_tbl_headers = ["軸別", "Leq 評定等級", "等級說明"]
+            vc_tbl_rows = []
+            for axis in AXES + ["XYZ"]:
+                grade = vc_grades.get(axis, "—")
+                desc = VC_DESCRIPTIONS.get(grade, "—")
+                vc_tbl_rows.append([AXIS_LABELS[axis], grade, desc])
+            _add_table_from_data(doc, vc_tbl_headers, vc_tbl_rows)
+
+            doc.add_page_break()
+
+            # ═══════════════════════════════════════════════
+            #  6. 環境振動
+            # ═══════════════════════════════════════════════
+            self._queue.put(("_report_status", "正在寫入環境振動段落..."))
+            doc.add_heading("六、環境振動", level=1)
+
+            env_summary = (
+                f"環境振動分析將量測期間 {period_str} 之連續監測數據依小時區段進行統計彙整，"
+                f"計算各小時之 Lveq（等效振動量）、Lvmax（最大振動量）、"
+                f"Lv5（超過 5%）、Lv10（超過 10%）、Lv50（中位數）、"
+                f"Lv90（超過 90%）及 Lv95（超過 95%）等統計值。"
+                f"此外，依據常見環境噪音振動評量架構，將量測時段區分為"
+                f"早（05～07 時）、日（07～20 時）、晚（20～22 時）、夜（22～05 時）四個時段，"
+                f"分別計算 Lv5、Lv10 及 Lvmax 作為監測成果摘要。"
+                f"藉由時段別分析可掌握量測地點於不同活動時段之振動環境差異，"
+                f"據以評估是否符合相關環境振動管制標準與精密設備運轉需求。"
+                f"完整數據已列示於下方表格，振動量單位為 {unit}。"
+            )
+            doc.add_paragraph(env_summary)
+
+            # 從環境振動 Treeview 取資料
+            env_headers = ["時間", "Lveq", "Lvmax", "Lv5", "Lv10", "Lv50", "Lv90", "Lv95"]
+            env_rows = []
+            for item in self.env_tree.get_children():
+                vals = self.env_tree.item(item, "values")
+                env_rows.append(list(vals))
+            if env_rows:
+                _add_table_from_data(doc, env_headers, env_rows)
+
+            # ═══════════════════════════════════════════════
+            #  儲存
+            # ═══════════════════════════════════════════════
+            self._queue.put(("_report_status", f"正在儲存至 {doc_path} ..."))
+            doc.save(doc_path)
+
+            # 清理暫存圖片
+            import shutil
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+            self._queue.put(("_report_done", doc_path))
+
+        except Exception as e:
+            import traceback
+            self._queue.put(("_report_error", f"{e}\n\n{traceback.format_exc()}"))
+
+    # ════════════════════════════════════════════════════════
+    #  輸出報告佇列處理（已整合至 _poll_queue）
+    # ════════════════════════════════════════════════════════
 
 
 # ════════════════════════════════════════════════════════

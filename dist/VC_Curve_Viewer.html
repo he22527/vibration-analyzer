@@ -63,6 +63,7 @@ tr:nth-child(even){background:#f7fafc}
     <button onclick="swTab('stats')">統計表</button>
     <button onclick="swTab('vc')">VC 曲線</button>
     <button onclick="swTab('env')">環境振動</button>
+    <button id="btn-report" onclick="swTab('report')" style="display:none">輸出報告</button>
   </div>
 </div>
 
@@ -264,6 +265,17 @@ tr:nth-child(even){background:#f7fafc}
   </div></div>
 </div>
 
+<!-- ═══════ 輸出報告 ═══════ -->
+<div id="tab-report" class="tab-content container" style="flex-direction:column;align-items:center;padding-top:40px">
+  <div style="max-width:700px;text-align:center">
+    <h2 style="color:#1a365d;margin-bottom:12px">輸出報告</h2>
+    <p style="color:#555;margin-bottom:20px">將所有分頁的數據表格與圖形整合為報告，每個段落包含總結說明文字、表格及圖表。<br>點擊下方按鈕可產生可列印的報告頁面。</p>
+    <div id="rpt-info" style="color:#2c5282;font-size:.9em;margin-bottom:16px"></div>
+    <button class="btn" onclick="genReport()" style="padding:10px 30px;font-size:1em">▶  產生報告</button>
+    <p id="rpt-status" style="color:gray;font-size:.82em;margin-top:12px"></p>
+  </div>
+</div>
+
 <script>
 /* ═══ 通用 ═══ */
 function swTab(id){document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));document.querySelectorAll('#main-tabs button').forEach(b=>b.classList.remove('active'));document.getElementById('tab-'+id).classList.add('active');event.target.classList.add('active')}
@@ -318,6 +330,131 @@ const gv=id=>parseInt(document.getElementById(id).value);const pp=[[`L早(${Stri
 function inR(hr,s,e){return s<e?(hr>=s&&hr<e):(hr>=s||hr<e)}h+='<tr class="sep"><td colspan="8"></td></tr><tr class="sum-hdr"><td>監測成果</td><td></td><td></td><td>Lv5</td><td>Lv10</td><td></td><td></td><td>Lvmax</td></tr>';pp.forEach(([lb,s,e])=>{const sub=ED.filter(d=>inR(d.h,s,e));if(!sub.length){h+='<tr class="sum"><td>'+lb+'</td><td></td><td></td><td>—</td><td>—</td><td></td><td></td><td>—</td></tr>';return}const mx=a=>{const v=a.filter(isFinite);return v.length?Math.max(...v):NaN};h+='<tr class="sum"><td>'+lb+'</td><td></td><td></td><td>'+F(mx(sub.map(d=>d.l5)))+'</td><td>'+F(mx(sub.map(d=>d.l10)))+'</td><td></td><td></td><td>'+F(mx(sub.map(d=>d.mx)))+'</td></tr>'});h+='</table>';document.getElementById("env-tw").innerHTML=h}
 function envExp(){if(!ED.length){alert("尚未載入");return}let c="﻿時間,Lveq,Lvmax,Lv5,Lv10,Lv50,Lv90,Lv95\n";const F=v=>(isNaN(v)||!isFinite(v))?"":v.toFixed(1);ED.forEach(d=>{c+=d.lb+','+F(d.eq)+','+F(d.mx)+','+F(d.l5)+','+F(d.l10)+','+F(d.l50)+','+F(d.l90)+','+F(d.l95)+'\n'});const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([c],{type:"text/csv;charset=utf-8"}));a.download="環境振動.csv";a.click()}
 envRender();
+
+/* ═══ 輸出報告 ═══ */
+let _tabsLoaded={raw:false,time:false,freq:false,stats:false,vc:false,env:false};
+function chkReport(){
+  // 每當任一分頁載入數據時檢查是否全部完成
+  const tabs=['raw','time','freq','stats','vc','env'];
+  _tabsLoaded.raw=RD.length>0;_tabsLoaded.time=TD.length>0;_tabsLoaded.freq=FD.length>0;
+  _tabsLoaded.stats=SD.length>0;_tabsLoaded.vc=document.getElementById('ud').value.trim().length>0;
+  _tabsLoaded.env=ED.length>0;
+  const ready=Object.values(_tabsLoaded).filter(Boolean).length;
+  if(ready>=3){document.getElementById('btn-report').style.display='';
+    document.getElementById('rpt-info').textContent='已載入 '+ready+'/6 個分頁數據（至少3個即可產生報告）'}
+}
+// 攔截各分頁載入事件
+const _origDraw=drawRaw;drawRaw=function(){_origDraw();chkReport()};
+const _origTS=plotTS;plotTS=function(){_origTS();chkReport()};
+const _origFQ=plotFQ;plotFQ=function(){_origFQ();chkReport()};
+const _origST=showStats;showStats=function(){_origST();chkReport()};
+const _origVC=vcDraw;vcDraw=function(){_origVC();chkReport()};
+const _origEV=envRender;envRender=function(){_origEV();chkReport()};
+
+function genReport(){
+  document.getElementById('rpt-status').textContent='正在產生報告...';
+  setTimeout(()=>{
+    const w=window.open('','_blank');
+    if(!w){document.getElementById('rpt-status').textContent='無法開啟新視窗，請允許彈出式視窗';return}
+    let h='<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>背景振動量測數據分析報告</title>';
+    h+='<style>body{font-family:"Microsoft JhengHei","Segoe UI",sans-serif;max-width:900px;margin:0 auto;padding:30px;color:#1a202c;font-size:14px;line-height:1.7}';
+    h+='h1{text-align:center;color:#1a365d;border-bottom:2px solid #2c5282;padding-bottom:10px}';
+    h+='h2{color:#2c5282;margin-top:30px;border-left:4px solid #2c5282;padding-left:10px}';
+    h+='table{border-collapse:collapse;width:100%;font-size:12px;margin:12px 0}';
+    h+='th,td{border:1px solid #cbd5e0;padding:4px 6px;text-align:center}';
+    h+='th{background:#edf2f7;font-weight:600}tr:nth-child(even){background:#f7fafc}';
+    h+='p{text-indent:2em;margin:8px 0}.cap{text-align:center;font-size:.85em;color:#555;margin:6px 0 20px}';
+    h+='.info{text-align:center;color:#2c5282;margin-bottom:20px}';
+    h+='img{max-width:100%;display:block;margin:10px auto}';
+    h+='@media print{body{padding:10px}h1{font-size:18px}h2{font-size:14px}table{font-size:10px;page-break-inside:avoid}img{max-width:100%}}';
+    h+='</style></head><body>';
+    h+='<h1>背景振動量測數據分析報告</h1>';
+    h+='<div class="info">產生時間：'+(new Date().toLocaleString('zh-TW'))+'</div>';
+
+    // 1. 原始數據
+    if(RD.length){
+      h+='<h2>一、原始數據</h2>';
+      const n=RD.length,tc=RH.find(x=>x.includes('Time')||x.includes('時間'))||'',sd=RD[0]?.[tc]||'',ed=RD[n-1]?.[tc]||'';
+      const bb=RH.filter(c=>c.includes('寬頻'));const fq=RH.filter(x=>x.match(/Hz/));
+      h+='<p>本次背景振動量測作業於 '+sd.split(' ')[0]+' 至 '+ed.split(' ')[0]+' 期間進行連續監測，採用精密振動感測器記錄三軸（X、Y、Z）方向之加速度值，涵蓋多個 1/3 八度音頻帶。經資料彙整與去重複處理後，共計取得 '+n.toLocaleString()+' 筆有效量測紀錄。各筆紀錄均包含時間戳記與各頻帶之三軸振動加速度值，並據此計算寬頻合成值 √(X² + Y² + Z²) 作為綜合評估依據。下表列出前 30 筆量測數據樣本，完整數據可透過程式匯出 CSV 檔案進行詳細檢視。</p>';
+      const mx=Math.min(n,30);h+='<table><tr>';RH.forEach(c=>h+='<th>'+c+'</th>');h+='</tr>';
+      for(let i=0;i<mx;i++){h+='<tr>';RH.forEach(c=>h+='<td>'+(RD[i][c]||'')+'</td>');h+='</tr>'}
+      h+='</table><p class="cap">（僅列出前 '+mx+' 筆，共 '+n.toLocaleString()+' 筆）</p>';
+      if(bb.length){
+        h+='<h3>原始數據統計量摘要（寬頻）</h3><table><tr><th>欄位</th><th>L5</th><th>L10</th><th>L50</th><th>L90</th><th>L95</th><th>Lmax</th></tr>';
+        bb.forEach(c=>{const v=RD.map(r=>parseFloat(r[c])).filter(x=>isFinite(x)&&x>0).sort((a,b)=>a-b);if(!v.length)return;
+          const p=q=>{const i=(1-q/100)*(v.length-1),lo=Math.floor(i);return lo>=v.length-1?v[v.length-1]:v[lo]+(i-lo)*(v[lo+1]-v[lo])};
+          h+='<tr><td>'+c+'</td><td>'+fm(p(5))+'</td><td>'+fm(p(10))+'</td><td>'+fm(p(50))+'</td><td>'+fm(p(90))+'</td><td>'+fm(p(95))+'</td><td>'+fm(Math.max(...v))+'</td></tr>'});
+        h+='</table>'}
+    }
+
+    // 2. 時間序列
+    if(TD.length){
+      h+='<h2>二、時間序列</h2>';
+      h+='<p>時間序列圖呈現量測期間內各軸向及 XYZ 合成之寬頻振動量隨時間變化趨勢。圖中以 X 軸（藍色）、Y 軸（綠色）、Z 軸（紅色）分別標示，便於觀察各方向振動特性之差異與時間分布規律。由圖形可判讀振動量之尖峰出現時段、背景振動之穩態水準，以及是否存在週期性或異常突發振動事件。分析間距決定時間解析度，可用於評估量測地點之振動環境品質。</p>';
+      try{h+='<div id="_rpt_ts" style="width:800px;height:400px"></div>'}catch(e){}
+    }
+
+    // 3. 頻率分析
+    if(FD.length){
+      h+='<h2>三、頻率分析</h2>';
+      h+='<p>頻率分析圖以柱狀圖呈現各 1/3 八度音頻帶之 Leq（均方根等效值）分布情形，可分別檢視 X、Y、Z 各軸向及 XYZ 合成之頻譜特性。透過頻率分析可辨識量測地點之主要振動頻率成分，判斷振動源特性，並評估各頻帶對寬頻振動量之貢獻度。此一主頻資訊可作為振動源鑑定與防制對策擬定之重要參考依據。完整頻譜分析數據可由統計表分頁查閱各頻帶之詳細統計值。</p>';
+      h+='<table><tr>';FH.forEach(c=>h+='<th>'+c+'</th>');h+='</tr>';
+      FD.forEach(r=>{h+='<tr>';FH.forEach(c=>h+='<td>'+(r[c]||'')+'</td>');h+='</tr>'});
+      h+='</table>';
+    }
+
+    // 4. 統計表
+    if(SD.length){
+      h+='<h2>四、統計表</h2>';
+      h+='<p>統計表彙整分析期間內各軸向（X、Y、Z 及 XYZ 合成）於各 1/3 八度音頻帶之七項統計量：Leq（均方根等效值）、L5（超過 5% 時間之振動量）、L10（超過 10%）、L50（超過 50%，中位數）、L90（超過 90%）、L95（超過 95%，近背景值）及 Lmax（最大值）。Leq 反映量測期間之能量平均水準；L5 與 Lmax 可捕捉尖峰振動事件；L50 代表半數以上時間之振動水準；L90 與 L95 趨近環境背景振動值。此統計架構可全面呈現振動環境之能量分布與變異程度，作為精密設備選址評估及環境振動管制之量化依據。</p>';
+      h+='<table><tr>';SH.forEach(c=>h+='<th>'+c+'</th>');h+='</tr>';
+      SD.forEach(r=>{const bb=(r['頻段']||'').includes('Broadband');h+='<tr'+(bb?' style="background:#dbeafe;font-weight:600"':'')+'>';SH.forEach(c=>h+='<td>'+(r[c]||'')+'</td>');h+='</tr>'});
+      h+='</table>';
+    }
+
+    // 5. VC 曲線
+    {const ud=document.getElementById('ud').value.trim();
+    if(ud){
+      h+='<h2>五、VC 曲線比較</h2>';
+      h+='<p>VC 曲線比較圖依據 Ungar & Gordon（1991）提出之 Generic Vibration Criterion（振動準則曲線），將量測所得之各 1/3 八度音頻帶振動速度值與國際通用的 VC-A 至 VC-E 等級限值進行對照評定。VC 曲線以速度 RMS（μm/s）呈現，評定頻段為 4～80 Hz；4～8 Hz 段具有斜率修正（每 1/3 八度音帶 +2 dB），8 Hz 以上為平坦段。各等級對應不同精密設備之容許振動環境，可作為該場址精密設備配置可行性之判定依據。</p>';
+      const vs=ud.split(/[,，\s]+/).map(Number).filter(v=>!isNaN(v)&&v>0);
+      if(vs.length===14){const g=vg(VF.map((f,i)=>[f,vs[i]]));h+='<p style="font-weight:700;color:#1a365d">VC 等級評定結果：'+g+'</p>';
+        h+='<table><tr><th>頻率(Hz)</th>';VF.forEach(f=>h+='<th>'+f+'</th>');h+='</tr>';
+        h+='<tr><td>量測值(μm/s)</td>';vs.forEach(v=>h+='<td>'+v.toFixed(2)+'</td>');h+='</tr>';
+        h+='<tr><td>'+g+'限值</td>';VF.forEach(f=>h+='<td>'+vv(VC[g]?VC[g].f:50.7,f).toFixed(2)+'</td>');h+='</tr></table>'}
+    }}
+
+    // 6. 環境振動
+    if(ED.length){
+      h+='<h2>六、環境振動</h2>';
+      h+='<p>環境振動分析將連續監測數據依小時區段進行統計彙整，計算各小時之 Lveq（等效振動量）、Lvmax（最大振動量）、Lv5（超過 5%）、Lv10（超過 10%）、Lv50（中位數）、Lv90（超過 90%）及 Lv95（超過 95%）等統計值。此外依據環境噪音振動評量架構，將量測時段區分為早（05～07 時）、日（07～20 時）、晚（20～22 時）、夜（22～05 時）四個時段，分別計算監測成果摘要。藉由時段別分析可掌握量測地點於不同活動時段之振動環境差異，據以評估是否符合相關環境振動管制標準與精密設備運轉需求。</p>';
+      const tw=document.getElementById('env-tw');if(tw)h+=tw.innerHTML;
+    }
+
+    h+='<hr style="margin-top:40px"><p style="text-align:center;color:#999;font-size:.8em">本報告由「背景振動量測數據分析工具」自動產生</p>';
+    h+='</body></html>';
+    w.document.write(h);w.document.close();
+
+    // 嵌入時間序列圖
+    if(TD.length){
+      setTimeout(()=>{
+        try{
+          const el=w.document.getElementById('_rpt_ts');
+          if(el){
+            const tc2=TH.find(h2=>h2.includes('Time')||h2.includes('時間'));
+            const tr2=[];const cl2={X:'royalblue',Y:'forestgreen',Z:'crimson'};
+            ['X','Y','Z'].forEach(a=>{const c=TH.find(h2=>h2.startsWith(a)&&h2.includes('寬頻'));if(!c)return;
+              tr2.push({x:TD.map(r=>r[tc2]),y:TD.map(r=>parseFloat(r[c])),mode:'lines',name:a+'軸',line:{color:cl2[a],width:1}})});
+            Plotly.newPlot(el,tr2,{title:'寬頻振動時間序列',xaxis:{title:'時間'},yaxis:{title:'振動量'},margin:{l:60,r:20,t:40,b:50}},{staticPlot:true});
+          }
+        }catch(e){}
+      },500);
+    }
+
+    document.getElementById('rpt-status').textContent='報告已在新視窗中開啟，可使用瀏覽器列印功能儲存為 PDF';
+  },100);
+}
 </script>
 </body>
 </html>
